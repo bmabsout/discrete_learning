@@ -370,4 +370,18 @@ Next Obligation.
   trivial.
 Qed.
 
+(* Fast implementation of uint2_add derivative *)
+Definition uint2_add_deriv_fast (a b: uint2) : uint2 :=
+  let (a1,a0) := a in
+  let (b1,b0) := b in
+  (true,    (* MSB always sensitive due to XOR *)
+   b0).     (* LSB affects MSB only when b0 is true (carry) *)
+
+(* Prove it matches the bit-by-bit derivative *)
+Theorem uint2_add_deriv_fast_correct: forall (a b: uint2),
+  uint2_add_deriv_fast a b = uint2_deriv (fun x => uint2_add x b) a.
+Proof.
+  bool_crush.
+Qed.
+
 

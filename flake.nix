@@ -12,7 +12,10 @@
       let
         pkgs = import nixpkgs {
           inherit system;
+          config.allowUnfree = true;
+          config.cudaSupport = true;
         };
+        python = pkgs.python3.withPackages (ps: [ps.pytorch ps.torchvision]);
      
       in
       {
@@ -22,7 +25,7 @@
             # Add Coq packages
             pkgs.coq
             pkgs.coqPackages.coq-lsp
-            pkgs.python3
+            python
           ];
         };
       }
