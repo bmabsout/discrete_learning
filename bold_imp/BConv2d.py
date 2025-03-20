@@ -230,6 +230,40 @@ class BoolActvWithThresh(nn.Module):
     def forward(self, X) :
         return ActvFunctionWithThresh.apply(X, self.sup)
 
+
+class ActvFunctionWithThreshDiscrete(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, sup, spread):
+        ctx.save_for_backward(X)
+        ctx.sup = sup
+        ctx.spread = spread
+
+        S = torch.ge(X,sup // 2).float()
+        return S
+
+    @staticmethod
+    def backward(ctx, Z):
+        X, = ctx.saved_tensors
+        sup = ctx.sup
+        spread = ctx.spread
+
+        dist = torch.abs(X - sup // 2)
+        # Create a mask where distance is less than spread
+        G_X = torch.zeros_like(dist)
+        G_X[dist < spread] = 1.0
+ 
+        G_X = Z * G_X        
+        return G_X, None, None
+        
+class BoolActvWithThreshDiscrete(nn.Module):
+    def __init__(self, sup, spread):
+        super().__init__()
+        self.sup = sup
+        self.spread = spread
+
+    def forward(self, X) :
+        return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread)
+
 def gather_relevant_gradients(Z, batch_idx, c_out, h_in, w_in, KH, KW):
     """
     Given the batch index, output channel index, and input position,

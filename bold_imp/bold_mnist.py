@@ -7,7 +7,7 @@ from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
-from BConv2d import XORConv2d, BoolActvWithThresh
+from BConv2d import XORConv2d, BoolActvWithThresh, BoolActvWithThreshDiscrete
      
 def backward_bool(ctx, Z):
     """
@@ -222,9 +222,9 @@ class Net(nn.Module):
 class NetThreshold(nn.Module):
     def __init__(self):
         super(NetThreshold, self).__init__()
-        self.bool_fc1 = XORLinear(28*28, 256, bool_bprop=False)
-        self.actv1 = BoolActvWithThresh(28*28)
-        self.bool_fc2 = XORLinear(256, 10, bool_bprop=False)
+        self.bool_fc1 = XORLinear(28*28, 64, bool_bprop=False)
+        self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=10)
+        self.bool_fc2 = XORLinear(64, 1, bool_bprop=False)
         self.final_fc = nn.Linear(1,1)
         # self.actv2 = BoolActvWithThresh(512)
         # self.bool_fc3 = nn.Linear(10, 10)
@@ -351,6 +351,24 @@ def main():
                        transform=transform)
     dataset2 = datasets.MNIST('../data', train=False,
                        transform=transform)
+    
+    # Create binary dataset (only digits 0 and 1)
+    idx_train = (dataset1.targets == 0) | (dataset1.targets == 1)
+    idx_test = (dataset2.targets == 0) | (dataset2.targets == 1)
+    
+    # Print original dataset sizes
+    print("\nOriginal Dataset Sizes:")
+    print(f"Training set: {len(dataset1)}")
+    print(f"Test set: {len(dataset2)}")
+    
+    dataset1.data = dataset1.data[idx_train]
+    dataset1.targets = dataset1.targets[idx_train]
+    
+    dataset2.data = dataset2.data[idx_test]
+    dataset2.targets = dataset2.targets[idx_test]
+
+
+
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
