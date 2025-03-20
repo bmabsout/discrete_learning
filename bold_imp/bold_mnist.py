@@ -134,7 +134,7 @@ class BoolActv(nn.Module):
         
 class XORLinear(nn.Linear):
     def __init__(self, in_features : int , out_features : int , bool_bprop : bool , ** kwargs ):
-        super(XORLinear, self). __init__(in_features ,out_features , ** kwargs )
+        super(XORLinear, self).__init__(in_features ,out_features , ** kwargs )
         self.bool_bprop = bool_bprop
   
     def reset_parameters(self):
@@ -227,19 +227,26 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
         data, target = data.to(device), target.to(device)
         data=torch.gt(data,0.5).float()
         
-        optimizer.zero_grad()
-        optimizer_bool.zero_grad()
+        # Zero gradients for whichever optimizer exists
+        if optimizer is not None:
+            optimizer.zero_grad()
+        if optimizer_bool is not None:
+            optimizer_bool.zero_grad()
         
         output = model(data)
         loss = F.nll_loss(output, target)
         loss.backward()
         
-        optimizer.step()
-        optimizer_bool.step()
-        
-        # Get the number of flips from the boolean optimizer
-        batch_flips = optimizer_bool.nb_flips
-        total_flips += batch_flips
+        # Update with whichever optimizer exists
+        if optimizer is not None:
+            optimizer.step()
+        if optimizer_bool is not None:
+            optimizer_bool.step()
+            # Get the number of flips from the boolean optimizer
+            batch_flips = optimizer_bool.nb_flips
+            total_flips += batch_flips
+        else:
+            batch_flips = 0
         
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tFlips: {}'.format(
@@ -330,7 +337,7 @@ def main():
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
     # model = Net().to(device)
-    model = ConvNet().to(device)
+    model = Net().to(device)
     
     
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr)
