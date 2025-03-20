@@ -185,9 +185,11 @@ class BooleanOptimizer(torch.optim.Optimizer):
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.bool_fc1 = XORLinear(28*28, 10,bool_bprop=False)
-        self.bool_fc2 = XORLinear(10, 10,bool_bprop=False)
-        self.actv = BoolActv()
+        self.bool_fc1 = XORLinear(28*28, 90,bool_bprop=False)
+        self.bool_fc2 = XORLinear(90, 10,bool_bprop=False)
+        self.bool_fc3 = XORLinear(10, 10,bool_bprop=False)
+        self.actv1 = BoolActv()
+        self.actv2 = BoolActv()
         self.final_fc = nn.Linear(10,10)
 
     def forward(self, x):
@@ -195,9 +197,13 @@ class Net(nn.Module):
         x = self.bool_fc1(x)
         
         # Active the interger value to boolean
-        x = self.actv(x)
+        x = self.actv1(x)
         
         x = self.bool_fc2(x)
+        
+        x = self.actv2(x)
+        
+        x = self.bool_fc3(x)
         
         # x = self.final_fc(x)
         
@@ -205,25 +211,36 @@ class Net(nn.Module):
         return output
 
 
-def train(args, model, device, train_loader, optimizers, epoch):
+def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     model.train()
+    total_flips = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         data=torch.gt(data,0.5).float()
-        for optimizer in optimizers:
-              optimizer.zero_grad()
+        
+        optimizer.zero_grad()
+        optimizer_bool.zero_grad()
+        
         output = model(data)
         loss = F.nll_loss(output, target)
         loss.backward()
-        for optimizer in optimizers:
-             optimizer.step()
+        
+        optimizer.step()
+        optimizer_bool.step()
+        
+        # Get the number of flips from the boolean optimizer
+        batch_flips = optimizer_bool.nb_flips
+        total_flips += batch_flips
+        
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tFlips: {}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+                100. * batch_idx / len(train_loader), loss.item(), batch_flips))
             if args.dry_run:
                 break
     
+    print('Total flips in epoch {}: {}'.format(epoch, total_flips))
+
 def test(model, device, test_loader):
     model.eval()
     test_loss = 0
@@ -253,7 +270,7 @@ def main():
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=30, metavar='N',
                         help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 1.0)')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
                         help='Learning rate step gamma (default: 0.7)')
@@ -277,8 +294,10 @@ def main():
 
     if use_cuda:
         device = torch.device("cuda")
+        print("Using CUDA")
     elif use_mps:
         device = torch.device("mps")
+        print("Using MPS")
     else:
         device = torch.device("cpu")
 
@@ -305,15 +324,15 @@ def main():
     
     
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr)
-    optimizer_bool=BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr*10)
+    optimizer_bool = BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr*10)
     # optimizer_bool=BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=12)
 
     for epoch in range(1, args.epochs + 1):
-        train(args, model, device, train_loader, [optimizer,optimizer_bool], epoch)
+        train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
         test(model, device, test_loader)
 
     if args.save_model:
-        torch.save(model.state_dict(), "mnist_cnn.pt")
+        torch.save(model.state_dict(), "mnist_bnn.pt")
 
 
 if __name__ == '__main__':
