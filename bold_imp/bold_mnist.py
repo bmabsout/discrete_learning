@@ -195,8 +195,8 @@ class ConvNet(nn.Module):
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.bool_fc1 = XORLinear(28*28, 90,bool_bprop=False)
-        self.bool_fc2 = XORLinear(90, 10,bool_bprop=False)
+        self.bool_fc1 = XORLinear(28*28, 512,bool_bprop=False)
+        self.bool_fc2 = XORLinear(512, 10,bool_bprop=False)
         self.bool_fc3 = XORLinear(10, 10,bool_bprop=False)
         self.actv1 = BoolActv()
         self.actv2 = BoolActv()
@@ -218,6 +218,25 @@ class Net(nn.Module):
         
         output = F.log_softmax(x, dim=1)
         return output
+    
+class NetThreshold(nn.Module):
+    def __init__(self):
+        super(NetThreshold, self).__init__()
+        self.bool_fc1 = nn.Linear(28*28, 512)
+        self.actv1 = BoolActvWithThresh(28*28)
+        self.bool_fc2 = nn.Linear(512, 10)
+        self.actv2 = BoolActvWithThresh(512)
+        self.bool_fc3 = nn.Linear(10, 10)
+
+    def forward(self, x):
+        x = x.reshape(-1,28*28)
+        x = self.bool_fc1(x)
+        x = self.actv1(x)
+        x = self.bool_fc2(x)
+        x = self.actv2(x)
+        x = self.bool_fc3(x)
+        output = F.log_softmax(x, dim=1)
+        return output 
 
 
 def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
@@ -337,7 +356,8 @@ def main():
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
     # model = Net().to(device)
-    model = Net().to(device)
+    # model = Net().to(device)
+    model = NetThreshold().to(device)
     
     
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr)
