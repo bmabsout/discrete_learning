@@ -87,7 +87,7 @@ class XORFunction(autograd.Function):
         S = S.sum(dim=2) + B
 
         # 0-centered for use with BatchNorm when preferred
-        S = S - W.shape[1] / 2
+        # S = S - W.shape[1] / 2
         
         # output is not boolean???????
 
@@ -222,19 +222,18 @@ class Net(nn.Module):
 class NetThreshold(nn.Module):
     def __init__(self):
         super(NetThreshold, self).__init__()
-        self.bool_fc1 = nn.Linear(28*28, 512)
+        self.bool_fc1 = XORLinear(28*28, 256, bool_bprop=False)
         self.actv1 = BoolActvWithThresh(28*28)
-        self.bool_fc2 = nn.Linear(512, 10)
-        self.actv2 = BoolActvWithThresh(512)
-        self.bool_fc3 = nn.Linear(10, 10)
+        self.bool_fc2 = XORLinear(256, 10, bool_bprop=False)
+        self.final_fc = nn.Linear(1,1)
+        # self.actv2 = BoolActvWithThresh(512)
+        # self.bool_fc3 = nn.Linear(10, 10)
 
     def forward(self, x):
         x = x.reshape(-1,28*28)
         x = self.bool_fc1(x)
         x = self.actv1(x)
         x = self.bool_fc2(x)
-        x = self.actv2(x)
-        x = self.bool_fc3(x)
         output = F.log_softmax(x, dim=1)
         return output 
 
