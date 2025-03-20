@@ -66,7 +66,8 @@ class XOR2DConvFunction(autograd.Function):
         assert B is None, "Bias is not supported yet. It's one boolean value anyway, don't think it is a big deal."
 
         # To conduct 2DConv, and instead of using multiplication, we use XOR
-        batch_size, in_channels, in_height, in_width = X.shape
+        # no need for number of input channels, because the ker and input have same number of channels
+        batch_size, _ , in_height, in_width = X.shape 
         out_channels, _, kernel_height, kernel_width = W.shape
 
         # Calculate output dimensions
@@ -109,7 +110,7 @@ class XOR2DConvFunction(autograd.Function):
         G_X, G_W, G_B = backward_real_2DConv(ctx, Z)
         return G_X, G_W, G_B
 
-# Claude's edition
+# Claude provides the template, I modify it to fit the XOR operation
 def backward_real_2DConv(ctx, Z):
     # Get the saved tensors from the context
     X, W, B = ctx.saved_tensors
@@ -137,6 +138,7 @@ def backward_real_2DConv(ctx, Z):
     else:
         X_padded = X
     
+    # First get G_W
     # For each example in the batch
     for b in range(batch_size):
         # For each output channel
@@ -159,24 +161,30 @@ def backward_real_2DConv(ctx, Z):
                                 w_in = w_start + kw
                                 
                                 if padding > 0:
+                                    raise NotImplementedError("Padding not supported yet")
                                     if 0 <= h_in < X_padded.shape[2] and 0 <= w_in < X_padded.shape[3]:
-                                        # grad_W[c_out, c_in, kh, kw] += X_padded[b, c_in, h_in, w_in] * grad_val
-                                        raise NotImplementedError("Padding not supported yet")
+                                        grad_W[c_out, c_in, kh, kw] += X_padded[b, c_in, h_in, w_in] * grad_val
                                 else:
                                     if 0 <= h_in < in_height and 0 <= w_in < in_width:
                                         # WARNING: here we run into a case that a float-multiplication is inevitable
-                                        # We have taken grad_val as float, then if X is float, this is essentially the same as the normal convolution
-                                        # if X is boolean, then we have the benefit of XOR
-                                        grad_W[c_out, c_in, kh, kw] += X[b, c_in, h_in, w_in] * grad_val
-                                        # if X is boolean, we use the following
+                                        # i.e. when X and W are both float. This is especially true when the very first BConv2D layer where X is the image
+
+                                        # USE the following if we know X and grad_val are BOTH FLOAT, this comes from the fact XNOR(x,y) is x * y
+                                        # the specific term is XNOR(Z, d xor(x,w) / dw) = XNOR(Z, -x) = -x * Z 
+                                        # some comments: how many terms eventually aggregated to grad_w[c_out, c_in, kh, kw]? it is Z.shape[2] * Z.shape[3]
+                                        grad_W[c_out, c_in, kh, kw] += -X[b, c_in, h_in, w_in] * grad_val
+
+                                        # USE the following if we know X is BOOL and the representaiton is F == 0 , T == 1. 
+                                        # the specific term is XNOR(Z, d xor(x,w) / dw) = XNOR(Z, not x)
+                                        # sanity check:
+                                        #   if x --> T, and Z > 0, then the result should be -Z
+                                        #          (1 - 2 * 1) * Z = -Z
+                                        #   if x --> F, and Z > 0, then the result should be Z
+                                        #          (1 - 2 * 0) * Z = Z
                                         # grad_W[c_out, c_in, kh, kw] += (1 - 2 * X[b, c_in, h_in, w_in]) * grad_val
-    
-    # For computing grad_X, we need to perform a "full" convolution with the rotated filters
-    # Rotate the filters by 180 degrees (flip height and width)
-    W_rotated = torch.flip(W, dims=[2, 3])
-    
+
     # For each example in the batch
-    for b in range(batch_size):
+    for batch_index in range(batch_size):
         # For each input channel
         for c_in in range(in_channels):
             # For each spatial location in the input
@@ -185,68 +193,36 @@ def backward_real_2DConv(ctx, Z):
                     # For each output channel
                     for c_out in range(out_channels):
                         # For each position in the filter
-                        for kh in range(kernel_height):
-                            for kw in range(kernel_width):
-                                # Calculate the corresponding position in the output gradient
-                                h_out = h_in - kh + padding
-                                w_out = w_in - kw + padding
+                        Z_idx_set = gather_relevant_gradients(Z, batch_index, c_out, h_in, w_in, kernel_height, kernel_width)
 
-                                # YOU ARE HERE, but I think AI is correc this time
-                                
-                                # Check if we're within the output gradient's bounds
-                                if h_out % stride == 0 and w_out % stride == 0:
-                                    h_out = h_out // stride
-                                    w_out = w_out // stride
-                                    
-                                    if 0 <= h_out < Z.shape[2] and 0 <= w_out < Z.shape[3]:
-                                        # some comment:
-                                        # here we definitly have the Bold benefit, Z is Some type, but W is boolean. 
-                                        # grad_X[b, c_in, h_in, w_in] += W[c_out, c_in, kernel_height-1-kh, kernel_width-1-kw] * Z[b, c_out, h_out, w_out]
-                                        # thus the true form is
-                                        # TODO: here is a potential bug, it should be torch.mm. This * is like element-wise multiplication
-                                        grad_X[b, c_in, h_in, w_in] += (1 - 2 * W_rotated[c_out, c_in, kernel_height-1-kh, kernel_width-1-kw]) * Z[b, c_out, h_out, w_out]
-    
+                        for idh,idw in Z_idx_set:
+                            # the associated weight of the gradient at (a,b)
+                            w = W[c_out, c_in, kernel_height - (h_in - idh) - 1, kernel_width - (w_in - idw) - 1]
+                            grad_X[batch_index, c_in, h_in, w_in] += (1 - 2 * w) * Z[batch_index, c_out, idh, idw]
+                        
     return grad_X, grad_W, grad_B
+
+def gather_relevant_gradients(Z, batch_idx, c_out, h_in, w_in, KH, KW):
+    """
+    Given the batch index, output channel index, and input position,
+    gather all positions in the output gradient Z that involve this input position.
+    """
+    res_idx = []
+    # Determine output dimensions
+    out_height, out_width = Z.shape[2], Z.shape[3]
     
-def backward_real_2DConv(ctx, Z):
-    X, W, B = ctx.saved_tensors
-    # X.type -> Some (take as float)
-    # W.type -> Boolean
-    # Z.type -> Some (take as float)
-
-    """
-    Boolean variation of input processed using torch avoiding loop:
-    -> xor(Z: Real, W: Boolean) = -Z * emb(W)
-    -> emb(W): T->1, F->-1 => emb(W) = 2W - 1
-    => delta(Loss)/delta(X) = Z*(1-2W)
-    """
-    # G_X = Z.mm(1 - 2 * W)
-    # first try to figure out G_X, for a specific input pixel, X[b, c_in, h_in, w_in]
-    # the question is how many pre-activation value is affected by this pixel
-    # if the the pixel is not on any proxy of border, then for each feature map, (ker_h * ker_w, i.e. 9)  pixels are affected
-    # it also affects all other feature maps, so the total number of affected pixels is (ker_h * ker_w * out_channels)
-    # if it does on the border proxy, we need to be careful
-
-    for b in range(X.shape[0]):
-        for c_in in range(X.shape[1]):
-            for h_in in range(X.shape[2]):
-                for w_in in range(X.shape[3]):
-                    # 
-
-    """
-    Boolean variation of weights processed using torch avoiding loop:
-    -> xor(Z: Real, X: Boolean) = -Z * emb(X)
-    -> emb(X): T->1, F->-1 => emb(X) = 2X - 1
-    => delta(Loss)/delta(W) = Z^T * (1-2X)
-    """
-    G_W = Z.t().mm(1 - 2 * X)
-
-    """ Boolean variation of bias """
-    if B is not None:
-        G_B = Z.sum(dim=0)
-
-    # Return
-    return G_X, G_W, G_B
+    # Calculate the range of output positions that use the input at (h_in, w_in)
+    h_start = max(0, h_in - KH + 1)
+    h_end = min(h_in + 1, out_height)
+    w_start = max(0, w_in - KW + 1)
+    w_end = min(w_in + 1, out_width)
+    
+    # Collect all relevant output positions
+    for h_out in range(h_start, h_end):
+        for w_out in range(w_start, w_end):
+            res_idx.append((h_out, w_out))
+            
+    return res_idx
 
 def test_forward():
     # Test the forward pass of the XORConv2d layer
