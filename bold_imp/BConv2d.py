@@ -79,7 +79,7 @@ class XOR2DConvFunction(autograd.Function):
         out_width = (in_width + 2 * padding - dilation * (kernel_width - 1) - 1) // stride + 1
     
         # Initialize output tensor
-        output = torch.zeros(batch_size, out_channels, out_height, out_width)
+        output = torch.zeros(batch_size, out_channels, out_height, out_width).to(X.device)
         
         # assuming padding = 0
         input_padded = X
@@ -124,8 +124,8 @@ def backward_real_2DConv(ctx, Z):
     out_channels, _, kernel_height, kernel_width = W.shape
     
     # Initialize gradients
-    grad_X = torch.zeros_like(X)
-    grad_W = torch.zeros_like(W)
+    grad_X = torch.zeros_like(X).to(X.device)
+    grad_W = torch.zeros_like(W).to(W.device)
     grad_B = torch.zeros_like(B) if B is not None else None
     
     # Compute gradient for bias (sum across batch and spatial dimensions)
@@ -172,7 +172,7 @@ def backward_real_2DConv(ctx, Z):
                                         # USE the following if we know X and grad_val are BOTH FLOAT, this comes from the fact XNOR(x,y) is x * y
                                         # the specific term is XNOR(Z, d xor(x,w) / dw) = XNOR(Z, -x) = -x * Z 
                                         # some comments: how many terms eventually aggregated to grad_w[c_out, c_in, kh, kw]? it is Z.shape[2] * Z.shape[3]
-                                        grad_W[c_out, c_in, kh, kw] += -X[b, c_in, h_in, w_in] * grad_val
+                                        # grad_W[c_out, c_in, kh, kw] += -X[b, c_in, h_in, w_in] * grad_val
 
                                         # USE the following if we know X is BOOL and the representaiton is F == 0 , T == 1. 
                                         # the specific term is XNOR(Z, d xor(x,w) / dw) = XNOR(Z, not x)
@@ -181,7 +181,7 @@ def backward_real_2DConv(ctx, Z):
                                         #          (1 - 2 * 1) * Z = -Z
                                         #   if x --> F, and Z > 0, then the result should be Z
                                         #          (1 - 2 * 0) * Z = Z
-                                        # grad_W[c_out, c_in, kh, kw] += (1 - 2 * X[b, c_in, h_in, w_in]) * grad_val
+                                        grad_W[c_out, c_in, kh, kw] += (1 - 2 * X[b, c_in, h_in, w_in]) * grad_val
 
     # For each example in the batch
     for batch_index in range(batch_size):
@@ -201,6 +201,34 @@ def backward_real_2DConv(ctx, Z):
                             grad_X[batch_index, c_in, h_in, w_in] += (1 - 2 * w) * Z[batch_index, c_out, idh, idw]
                         
     return grad_X, grad_W, grad_B
+
+
+class ActvFunctionWithThresh(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, sup):
+        ctx.save_for_backward(X)
+        ctx.sup = sup
+
+        S = torch.ge(X,sup // 2).float()
+        return S
+
+    @staticmethod
+    def backward(ctx, Z):
+        X, = ctx.saved_tensors
+        sup = ctx.sup
+        dist = torch.abs(X - sup // 2)
+        alpha = torch.pi / (2 * (3 * sup) ** 0.5)
+        G_X = 1 - torch.tanh(alpha * dist)**2
+        G_X = Z * G_X        
+        return G_X, None
+        
+class BoolActvWithThresh(nn.Module):
+    def __init__(self, sup):
+        super().__init__()
+        self.sup = sup
+        
+    def forward(self, X) :
+        return ActvFunctionWithThresh.apply(X, self.sup)
 
 def gather_relevant_gradients(Z, batch_idx, c_out, h_in, w_in, KH, KW):
     """

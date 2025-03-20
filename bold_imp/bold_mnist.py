@@ -5,13 +5,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
-
-
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
-
-
-
+from BConv2d import XORConv2d, BoolActvWithThresh
      
 def backward_bool(ctx, Z):
     """
@@ -171,7 +167,6 @@ class BooleanOptimizer(torch.optim.Optimizer):
                 self.update(p, param_group, idx)
 
     def update(self, param: Tensor, param_group: dict, idx: int):
-        
         accum = param_group['ratios'][idx] * param_group['accums'][idx] + param_group['lr'] * param.grad.data
         param_group['accums'][idx] = accum
         #print(param.grad.data.mean(),accum.mean())
@@ -181,6 +176,21 @@ class BooleanOptimizer(torch.optim.Optimizer):
         param_group['ratios'][idx] = 1 - param_to_flip.float().mean()
         self._nb_flips += float(param_to_flip.float().sum())
 
+class ConvNet(nn.Module):
+    def __init__(self):
+        super(ConvNet, self).__init__()
+        self.bool_bconv2d = XORConv2d(1, 10, 3)
+        self.bool_bconv2d_act = BoolActvWithThresh(28*28)
+        self.bool_fc1 = XORLinear(10*26*26, 10, bool_bprop=False)
+
+    def forward(self, x):
+        x = self.bool_bconv2d(x)
+        x = self.bool_bconv2d_act(x)
+        x = x.reshape(-1,10*26*26)
+        x = self.bool_fc1(x)
+        output = F.log_softmax(x, dim=1)
+        return output
+
 
 class Net(nn.Module):
     def __init__(self):
@@ -188,19 +198,13 @@ class Net(nn.Module):
         self.bool_fc1 = XORLinear(28*28, 10,bool_bprop=False)
         self.bool_fc2 = XORLinear(10, 10,bool_bprop=False)
         self.actv = BoolActv()
-        self.final_fc = nn.Linear(10,10)
 
     def forward(self, x):
         x = x.reshape(-1,28*28)
         x = self.bool_fc1(x)
-        
         # Active the interger value to boolean
         x = self.actv(x)
-        
         x = self.bool_fc2(x)
-        
-        # x = self.final_fc(x)
-        
         output = F.log_softmax(x, dim=1)
         return output
 
@@ -301,15 +305,17 @@ def main():
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
-    model = Net().to(device)
+    # model = Net().to(device)
+    model = ConvNet().to(device)
     
     
-    optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr)
-    optimizer_bool=BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr*10)
+    # optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr)
+    optimizer_bool=BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr)
     # optimizer_bool=BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=12)
 
     for epoch in range(1, args.epochs + 1):
-        train(args, model, device, train_loader, [optimizer,optimizer_bool], epoch)
+        # train(args, model, device, train_loader, [optimizer,optimizer_bool], epoch)
+        train(args, model, device, train_loader, [optimizer_bool], epoch)
         test(model, device, test_loader)
 
     if args.save_model:
