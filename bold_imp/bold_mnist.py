@@ -8,234 +8,39 @@ from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
 from BConv2d import XORConv2d, BoolActvWithThresh, BoolActvWithThreshDiscrete
-     
-def backward_bool(ctx, Z):
-    """
-    Variation of input:
-    - delta(xor(x,w))/delta(x) = neg w
-    - delta(Loss)/delta(x) = xnor(z, neg w) = xor(z,w)
-    Variation of weights:
-    - delta(xor(x,w))/delta(w) = neg x
-    - delta(Loss)/delta(x) = xnor(z, neg x) = xor(z,x)
-    Variation of bias:
-    - bias = xnor(bias, True) ==> Variation of bias is driven in
-      the same basis as that of weight with xnor logic and input True.
-    Aggregation:
-    - Count the number of TRUEs = sum over the Boolean data
-    - Aggr = TRUEs - FALSEs = TRUEs - (TOT - TRUEs) = 2 TRUES - TOT
-      where TOT is the size of the aggregated dimension
-    """
-    X, W, B = ctx.saved_tensors
-
-    # Boolean variation of input
-    G_X = torch.logical_xor(Z[:, :, None], W[None, :, :])
-
-    # Aggregate over the out_features dimension
-    G_X = 2 * G_X.sum(dim=1) - W.shape[0]
-
-    # Boolean variation of weights
-    G_W = torch.logical_xor(Z[:, :, None], X[:, None, :])
-
-    # Aggregate over the batch dimension
-    G_W = 2 * G_W.sum(dim=0) - X.shape[0]
-
-    # Boolean variation of bias
-    if B is not None:
-        # Aggregate over the batch dimension
-        G_B = 2 * Z.sum(dim=0) - Z.shape[0]
-
-    # Return
-    return G_X, G_W, G_B
-
-def backward_real(ctx, Z):
-    X, W, B = ctx.saved_tensors
-
-    """
-    Boolean variation of input processed using torch avoiding loop:
-    -> xor(Z: Real, W: Boolean) = -Z * emb(W)
-    -> emb(W): T->1, F->-1 => emb(W) = 2W - 1
-    => delta(Loss)/delta(X) = Z*(1-2W)
-    """
-    G_X = Z.mm(1 - 2 * W)
-
-    """
-    Boolean variation of weights processed using torch avoiding loop:
-    -> xor(Z: Real, X: Boolean) = -Z * emb(X)
-    -> emb(X): T->1, F->-1 => emb(X) = 2X - 1
-    => delta(Loss)/delta(W) = Z^T * (1-2X)
-    """
-    G_W = Z.t().mm(1 - 2 * X)
-
-    """ Boolean variation of bias """
-    if B is not None:
-        G_B = Z.sum(dim=0)
-
-    # Return
-    return G_X, G_W, G_B
-
-     
-class XORFunction(autograd.Function):
-    @staticmethod
-    def forward(ctx, X, W, B, bool_bprop: bool):
-        ctx.save_for_backward(X, W, B)
-        ctx.bool_bprop = bool_bprop
-
-        # Elementwise XOR logic
-        S = torch.logical_xor(X[:, None, :], W[None, :, :])
-
-        # Sum over the input dimension
-        S = S.sum(dim=2) + B
-
-        # 0-centered for use with BatchNorm when preferred
-        # S = S - W.shape[1] / 2
-        
-        # output is not boolean???????
-
-        return S
-
-    @staticmethod
-    def backward(ctx, Z):
-        if ctx.bool_bprop:
-            G_X, G_W, G_B = backward_bool(ctx, Z)
-        else:
-            G_X, G_W, G_B = backward_real(ctx, Z)
-
-        return G_X, G_W, G_B, None
-        
-class ActvFunction(autograd.Function):
-    @staticmethod
-    def forward(ctx, X):
-        ctx.save_for_backward(X)
-
-        S = torch.ge(X,0).float()
-
-        return S
-
-    @staticmethod
-    def backward(ctx, Z):
-        
-        dist_thresh = 4
-        
-        X, = ctx.saved_tensors
-        
-        # Gradient is defined by the distance to te center
-        G_X = torch.maximum(torch.zeros_like(X),dist_thresh-torch.abs(X)).float()
-        
-        G_X = Z*G_X
-        
-        return G_X, None
-        
-class BoolActv(nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-    def forward(self, X) :
-        return ActvFunction.apply(X)
-        
-class XORLinear(nn.Linear):
-    def __init__(self, in_features : int , out_features : int , bool_bprop : bool , ** kwargs ):
-        super(XORLinear, self).__init__(in_features ,out_features , ** kwargs )
-        self.bool_bprop = bool_bprop
-  
-    def reset_parameters(self):
-        self.weight = nn.Parameter(torch.randint(0, 2, self.weight.shape).float())#
-  
-        if self.bias is not None:
-          self.bias = nn.Parameter(torch.randint(0, 2, (self.out_features,)).float())
-  
-    def forward (self, X) :
-        return XORFunction.apply(X, self.weight , self.bias , self.bool_bprop)
-
-class BooleanOptimizer(torch.optim.Optimizer):
-
-    def __init__(self, params, lr: float):
-        super(BooleanOptimizer, self).__init__(params, dict(lr=lr))
-        for param_group in self.param_groups:
-            param_group['accums'] = [torch.zeros_like(p.data) for p in param_group['params']]
-            param_group['ratios'] = [0 for p in param_group['params']]
-        self._nb_flips = 0
-
-    @property
-    def nb_flips(self):
-        n = self._nb_flips
-        self._nb_flips = 0
-        return n
-
-    def step(self):
-        for param_group in self.param_groups:
-            for idx, p in enumerate(param_group['params']):
-                self.update(p, param_group, idx)
-
-    def update(self, param: Tensor, param_group: dict, idx: int):
-        accum = param_group['ratios'][idx] * param_group['accums'][idx] + param_group['lr'] * param.grad.data
-        param_group['accums'][idx] = accum
-        #print(param.grad.data.mean(),accum.mean())
-        param_to_flip = accum * (2 * param.data - 1) >= 1
-        param.data[param_to_flip] = torch.logical_not(param.data[param_to_flip]).float()
-        param_group['accums'][idx][param_to_flip] = 0.
-        param_group['ratios'][idx] = 1 - param_to_flip.float().mean()
-        self._nb_flips += float(param_to_flip.float().sum())
-
-class ConvNet(nn.Module):
-    def __init__(self):
-        super(ConvNet, self).__init__()
-        self.bool_bconv2d = XORConv2d(1, 10, 3)
-        self.bool_bconv2d_act = BoolActvWithThresh(28*28)
-        self.bool_fc1 = XORLinear(10*26*26, 10, bool_bprop=False)
-
-    def forward(self, x):
-        x = self.bool_bconv2d(x)
-        x = self.bool_bconv2d_act(x)
-        x = x.reshape(-1,10*26*26)
-        x = self.bool_fc1(x)
-        output = F.log_softmax(x, dim=1)
-        return output
+from bold_layers import XORLinear, BoolActv
+from bold_opt import BooleanOptimizer
 
 
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.bool_fc1 = XORLinear(28*28, 512,bool_bprop=False)
-        self.bool_fc2 = XORLinear(512, 10,bool_bprop=False)
-        self.bool_fc3 = XORLinear(10, 10,bool_bprop=False)
-        self.actv1 = BoolActv()
-        self.actv2 = BoolActv()
+        self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
+        self.actv1 = BoolActvWithThresh(28*28)
+        self.bool_fc2 = XORLinear(64, 10,bool_bprop=False)
         self.final_fc = nn.Linear(10,10)
 
     def forward(self, x):
         x = x.reshape(-1,28*28)
         x = self.bool_fc1(x)
-        # Active the interger value to boolean
         x = self.actv1(x)
-        
         x = self.bool_fc2(x)
-        
-        x = self.actv2(x)
-        
-        x = self.bool_fc3(x)
-        
-        # x = self.final_fc(x)
-        
-        output = F.log_softmax(x, dim=1)
-        return output
+        return F.log_softmax(x, dim=1)
     
 class NetThreshold(nn.Module):
     def __init__(self):
         super(NetThreshold, self).__init__()
         self.bool_fc1 = XORLinear(28*28, 64, bool_bprop=False)
         self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=10)
-        self.bool_fc2 = XORLinear(64, 1, bool_bprop=False)
+        self.bool_fc2 = XORLinear(64, 2, bool_bprop=False)
         self.final_fc = nn.Linear(1,1)
-        # self.actv2 = BoolActvWithThresh(512)
-        # self.bool_fc3 = nn.Linear(10, 10)
 
     def forward(self, x):
         x = x.reshape(-1,28*28)
         x = self.bool_fc1(x)
         x = self.actv1(x)
         x = self.bool_fc2(x)
-        output = F.log_softmax(x, dim=1)
-        return output 
+        return F.log_softmax(x, dim=1)
 
 
 def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
@@ -356,26 +161,16 @@ def main():
     idx_train = (dataset1.targets == 0) | (dataset1.targets == 1)
     idx_test = (dataset2.targets == 0) | (dataset2.targets == 1)
     
-    # Print original dataset sizes
-    print("\nOriginal Dataset Sizes:")
-    print(f"Training set: {len(dataset1)}")
-    print(f"Test set: {len(dataset2)}")
-    
     dataset1.data = dataset1.data[idx_train]
     dataset1.targets = dataset1.targets[idx_train]
-    
     dataset2.data = dataset2.data[idx_test]
     dataset2.targets = dataset2.targets[idx_test]
-
-
 
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
-    # model = Net().to(device)
-    # model = Net().to(device)
-    model = NetThreshold().to(device)
-    
+    model = Net().to(device)
+    # model = NetThreshold().to(device)
     
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr)
     optimizer_bool = BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr)
