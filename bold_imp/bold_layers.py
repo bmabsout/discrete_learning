@@ -5,9 +5,11 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
-from BConv2d import XORConv2d, BoolActvWithThresh, BoolActvWithThreshDiscrete
+from BConv2d import XORConv2d, BoolActvWithThresh
 
 def backward_bool(ctx, Z):
+    # Assert that Z only contains binary values (0 or 1)
+    assert torch.all(torch.logical_or(Z == 0, Z == 1)), "Z must contain only binary values (0 or 1)"
     """
     Variation of input:
     - delta(xor(x,w))/delta(x) = neg w
@@ -46,6 +48,8 @@ def backward_bool(ctx, Z):
     return G_X, G_W, G_B
 
 def backward_real(ctx, Z):
+    # assert all Z values are integers
+    assert torch.all(torch.eq(Z, torch.round(Z))), "Z must contain only integer values"
     X, W, B = ctx.saved_tensors
 
     """
@@ -86,9 +90,7 @@ class XORFunction(autograd.Function):
 
         # 0-centered for use with BatchNorm when preferred
         # S = S - W.shape[1] / 2
-        
-        # output is not boolean???????
-
+    
         return S
 
     @staticmethod
@@ -101,6 +103,9 @@ class XORFunction(autograd.Function):
         return G_X, G_W, G_B, None
         
 class XORLinear(nn.Linear):
+    # bool_bprop dictates how to interpret the gradient. 
+    #    setting True means  interpret 0 and 1 as False and True. 
+    #    setting False means interpret 0 and 1 as float number 0 and 1.
     def __init__(self, in_features : int , out_features : int , bool_bprop : bool , ** kwargs ):
         super(XORLinear, self).__init__(in_features ,out_features , ** kwargs )
         self.bool_bprop = bool_bprop
@@ -114,6 +119,38 @@ class XORLinear(nn.Linear):
     def forward (self, X) :
         return XORFunction.apply(X, self.weight , self.bias , self.bool_bprop)
 
+class ActvFunctionWithThreshDiscrete(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, sup, spread):
+        ctx.save_for_backward(X)
+        ctx.sup = sup
+        ctx.spread = spread
+
+        S = torch.ge(X,sup // 2).float()
+        return S
+
+    @staticmethod
+    def backward(ctx, Z):
+        X, = ctx.saved_tensors
+        sup = ctx.sup
+        spread = ctx.spread
+
+        dist = torch.abs(X - sup // 2)
+        # Create a mask where distance is less than spread
+        G_X = torch.zeros_like(dist)
+        G_X[dist < spread] = 1.0
+ 
+        G_X = Z * G_X        
+        return G_X, None, None
+        
+class BoolActvWithThreshDiscrete(nn.Module):
+    def __init__(self, sup, spread):
+        super().__init__()
+        self.sup = sup
+        self.spread = spread
+
+    def forward(self, X) :
+        return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread)
 
 
 class ActvFunction(autograd.Function):
@@ -145,3 +182,34 @@ class BoolActv(nn.Module):
         
     def forward(self, X) :
         return ActvFunction.apply(X)
+
+
+class BoolLoss(autograd.Function):
+    @staticmethod
+    def forward(ctx, pred, target):
+        ctx.save_for_backward(pred, target)
+        loss = torch.sum(torch.abs(pred - target)).float()
+        return loss
+
+    @staticmethod 
+    def backward(ctx, grad_output):
+        pred, target = ctx.saved_tensors
+        grad_pred = torch.logical_not(target) 
+        return grad_pred, None
+
+class BooleanLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self, pred, target):
+        return BoolLoss.apply(pred, target)
+
+
+def test_boolean_loss():
+    pred = torch.tensor([1, 0, 1, 0])
+    target = torch.tensor([1, 1, 0, 0])
+    loss = BooleanLoss()
+    print(loss(pred, target))
+
+if __name__ == "__main__":
+    test_boolean_loss()

@@ -1,66 +1,49 @@
-import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
-from torch.optim.lr_scheduler import StepLR
-from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
-from BConv2d import XORConv2d, BoolActvWithThresh, BoolActvWithThreshDiscrete
-from bold_layers import XORLinear, BoolActv
-from bold_opt import BooleanOptimizer
+from utils import get_args, filter_dataset_by_labels
 
+from bold_layers import XORLinear, BooleanLoss, BoolActvWithThreshDiscrete
+from bold_opt import BoldVanillaOptimizer
 
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
-        self.actv1 = BoolActvWithThresh(28*28)
-        self.bool_fc2 = XORLinear(64, 10,bool_bprop=False)
-        self.final_fc = nn.Linear(10,10)
-
-    def forward(self, x):
-        x = x.reshape(-1,28*28)
-        x = self.bool_fc1(x)
-        x = self.actv1(x)
-        x = self.bool_fc2(x)
-        return F.log_softmax(x, dim=1)
-    
-class NetThreshold(nn.Module):
-    def __init__(self):
-        super(NetThreshold, self).__init__()
-        self.bool_fc1 = XORLinear(28*28, 64, bool_bprop=False)
         self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=10)
-        self.bool_fc2 = XORLinear(64, 2, bool_bprop=False)
-        self.final_fc = nn.Linear(1,1)
+        self.bool_fc2 = XORLinear(64, 1,bool_bprop=True)  
+        self.actv2 = BoolActvWithThreshDiscrete(64, spread=10)
 
     def forward(self, x):
         x = x.reshape(-1,28*28)
         x = self.bool_fc1(x)
         x = self.actv1(x)
         x = self.bool_fc2(x)
-        return F.log_softmax(x, dim=1)
+        x = self.actv2(x)
+        return x
+
 
 
 def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     model.train()
     total_flips = 0
+    criterion = BooleanLoss()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         data=torch.gt(data,0.5).float()
         
-        # Zero gradients for whichever optimizer exists
         if optimizer is not None:
             optimizer.zero_grad()
         if optimizer_bool is not None:
             optimizer_bool.zero_grad()
         
         output = model(data)
-        loss = F.nll_loss(output, target)
+        loss = criterion(output.squeeze(1), target)
         loss.backward()
         
-        # Update with whichever optimizer exists
         if optimizer is not None:
             optimizer.step()
         if optimizer_bool is not None:
@@ -82,61 +65,27 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
 
 def test(model, device, test_loader):
     model.eval()
-    test_loss = 0
     correct = 0
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             data=torch.gt(data,0.5).float()
             output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
-
-    test_loss /= len(test_loader.dataset)
-
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
+            correct += (output.squeeze(1) == target).sum().item()
+    print(f'\nTest accuracy {correct / len(test_loader.dataset):.4f}')
 
 
 def main():
-    # Training settings
-    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
-                        help='input batch size for training (default: 64)')
-    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
-                        help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=30, metavar='N',
-                        help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
-                        help='learning rate (default: 1.0)')
-    parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
-                        help='Learning rate step gamma (default: 0.7)')
-    parser.add_argument('--no-cuda', action='store_true', default=False,
-                        help='disables CUDA training')
-    parser.add_argument('--no-mps', action='store_true', default=False,
-                        help='disables macOS GPU training')
-    parser.add_argument('--dry-run', action='store_true', default=False,
-                        help='quickly check a single pass')
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
-                        help='random seed (default: 1)')
-    parser.add_argument('--log-interval', type=int, default=50, metavar='N',
-                        help='how many batches to wait before logging training status')
-    parser.add_argument('--save-model', action='store_true', default=False,
-                        help='For Saving the current Model')
-    args = parser.parse_args()
+    args = get_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     use_mps = not args.no_mps and torch.backends.mps.is_available()
-
     torch.manual_seed(args.seed)
+    assert args.lr is None, "lr has no effect in this verion. Remove the setter and use thresh instead"
 
     if use_cuda:
         device = torch.device("cuda")
-        print("Using CUDA")
     elif use_mps:
         device = torch.device("mps")
-        print("Using MPS")
     else:
         device = torch.device("cpu")
 
@@ -157,31 +106,25 @@ def main():
     dataset2 = datasets.MNIST('../data', train=False,
                        transform=transform)
     
-    # Create binary dataset (only digits 0 and 1)
-    idx_train = (dataset1.targets == 0) | (dataset1.targets == 1)
-    idx_test = (dataset2.targets == 0) | (dataset2.targets == 1)
-    
-    dataset1.data = dataset1.data[idx_train]
-    dataset1.targets = dataset1.targets[idx_train]
-    dataset2.data = dataset2.data[idx_test]
-    dataset2.targets = dataset2.targets[idx_test]
-
+    dataset1 = filter_dataset_by_labels(dataset1)
+    dataset2 = filter_dataset_by_labels(dataset2)
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
     model = Net().to(device)
-    # model = NetThreshold().to(device)
     
-    optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr)
-    optimizer_bool = BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr)
+    fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
+    optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr) if len(fp_params) > 0 else None
+    # optimizer_bool = BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr)
+    optimizer_bool_vanilla = BoldVanillaOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh)
 
     for epoch in range(1, args.epochs + 1):
-        train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
+        # train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
+        train(args, model, device, train_loader, optimizer, optimizer_bool_vanilla, epoch)
         test(model, device, test_loader)
 
     if args.save_model:
         torch.save(model.state_dict(), "mnist_bnn.pt")
-
 
 if __name__ == '__main__':
     main()
