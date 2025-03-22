@@ -28,31 +28,26 @@ def get_args():
     parser.add_argument('--thresh', type=int, default=150, metavar='N',
                         help='Threshold for the vanilla thresh boolean optimizer. A larger value means a weight will be flipped if the voting is stronger.')
     parser.add_argument('--labels', type=int, nargs='+', default=[1,0],
-                        help='list of labels to use (default: 0,1)')
+                        help='list of labels to use (default: 1 0)')
     parser.add_argument('--all-labels', action='store_true', default=False,
                         help='Use all labels instead of binary classification')
+    parser.add_argument('--spread', type=int, default=10, metavar='N',
+                        help='Spread for the activation')
     return parser.parse_args()
 
-
 def filter_dataset_by_labels(dataset, wanted_labels):
-    """Filter a dataset to only keep samples with the specified labels.
+    # Create a mapping from original labels to new sequential indices
+    label_to_idx = {label: idx for idx, label in enumerate(wanted_labels)}
     
-    Args:
-        dataset: A torchvision dataset
-        wanted_labels: List of labels to keep
+    # Filter dataset to only include wanted labels
+    mask = torch.tensor([label in wanted_labels for label in dataset.targets])
+    dataset.data = dataset.data[mask]
+    dataset.targets = dataset.targets[mask]
     
-    Returns:
-        dataset with only samples matching wanted_labels
-    """
-    idx = torch.zeros_like(dataset.targets, dtype=torch.bool)
-    for label in wanted_labels:
-        idx |= (dataset.targets == label)
-        
-    dataset.data = dataset.data[idx]
-    dataset.targets = dataset.targets[idx]
-
-    # Convert labels to binary (0 and 1)
-    dataset.targets = (dataset.targets == wanted_labels[1]).float()
+    # Map the original labels to sequential indices [0,1,2,...]
+    # Convert tensor values to Python integers for dictionary lookup
+    dataset.targets = torch.tensor([label_to_idx[label.item()] for label in dataset.targets])
+    
     return dataset
 
 def get_tensor_stats(tensor, counter=5):

@@ -11,20 +11,21 @@ from bold_opt import BoldVanillaOptimizer
 from bold_loss import XORMismatchLoss
 
 class Net(nn.Module):
-    def __init__(self):
+    def __init__(self, args):
         super(Net, self).__init__()
         self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
-        self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=10)
-        self.bool_fc2 = XORLinear(64, 10,bool_bprop=True)  
-        self.actv2 = BoolActvWithThreshDiscrete(64, spread=10)
+        self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=args.spread)
+        self.bool_fc2 = XORLinear(64, len(args.labels),bool_bprop=True)  
+        self.actv2 = BoolActvWithThreshDiscrete(64, spread=args.spread)
 
     def forward(self, x):
         x = x.reshape(-1,28*28)
         x = self.bool_fc1(x)
         x = self.actv1(x)
         x = self.bool_fc2(x)
+        fork = x.detach()
         x = self.actv2(x)
-        return x
+        return x, fork
 
 def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     model.train()
@@ -33,14 +34,14 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         data=torch.gt(data,0.5).float()
-        target = F.one_hot(target, num_classes=10).float()  # 10 classes for MNIST
+        target = F.one_hot(target, num_classes=len(args.labels)).float()  # 10 classes for MNIST
         
         if optimizer is not None:
             optimizer.zero_grad()
         if optimizer_bool is not None:
             optimizer_bool.zero_grad()
         
-        output = model(data)
+        output, fork = model(data)
         loss = criterion(output, target)
         loss.backward()
         
@@ -63,21 +64,30 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     
     print('Total flips in epoch {}: {}'.format(epoch, total_flips))
 
-def test(model, device, test_loader):
+def test(args, model, device, test_loader):
     model.eval()
-    correct = 0
+    correct_preactivation = 0
+    correct_postactivation = 0
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             data=torch.gt(data,0.5).float()
-            target = F.one_hot(target, num_classes=10).float()  # 10 classes for MNIST
-            output = model(data)
-            correct += torch.sum(torch.all(output == target, dim=1)).item()
-    print(f'\nTest accuracy {correct / len(test_loader.dataset):.4f}')
+            target = F.one_hot(target, num_classes=len(args.labels)).float()  # 10 classes for MNIST
+            output, fork = model(data)
+
+            correct_postactivation += torch.sum(torch.all(output == target, dim=1)).item()
+
+            pred = torch.argmax(fork, dim=1)
+            target_idx = torch.argmax(target, dim=1)
+            correct_preactivation += (pred == target_idx).sum().item()
+
+    print(f'Test accuracy (post-activation) {correct_postactivation / len(test_loader.dataset):.4f} (pre-activation) {correct_preactivation / len(test_loader.dataset):.4f}\n')
 
 
 def main():
     args = get_args()
+    if args.all_labels:
+        args.labels = [0,1,2,3,4,5,6,7,8,9]
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     use_mps = not args.no_mps and torch.backends.mps.is_available()
     torch.manual_seed(args.seed)
@@ -112,7 +122,7 @@ def main():
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
-    model = Net().to(device)
+    model = Net(args).to(device)
     
     fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr) if len(fp_params) > 0 else None
@@ -122,7 +132,7 @@ def main():
     for epoch in range(1, args.epochs + 1):
         # train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
         train(args, model, device, train_loader, optimizer, optimizer_bool_vanilla, epoch)
-        test(model, device, test_loader)
+        test(args, model, device, test_loader)
 
     if args.save_model:
         torch.save(model.state_dict(), "mnist_bnn.pt")
