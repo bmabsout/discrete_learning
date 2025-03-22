@@ -27,10 +27,14 @@ def get_args():
                         help='For Saving the current Model')
     parser.add_argument('--thresh', type=int, default=150, metavar='N',
                         help='Threshold for the vanilla thresh boolean optimizer. A larger value means a weight will be flipped if the voting is stronger.')
+    parser.add_argument('--labels', type=int, nargs='+', default=[1,0],
+                        help='list of labels to use (default: 0,1)')
+    parser.add_argument('--all-labels', action='store_true', default=False,
+                        help='Use all labels instead of binary classification')
     return parser.parse_args()
 
 
-def filter_dataset_by_labels(dataset, wanted_labels = [1,0]):
+def filter_dataset_by_labels(dataset, wanted_labels):
     """Filter a dataset to only keep samples with the specified labels.
     
     Args:
@@ -75,3 +79,10 @@ def get_tensor_stats(tensor, counter=5):
         }
         get_tensor_stats.counter -= 1  # Decrement counter
         print(stats)
+
+
+
+if __name__ == "__main__":
+    args = get_args()
+    print(args.labels)
+

@@ -183,33 +183,3 @@ class BoolActv(nn.Module):
     def forward(self, X) :
         return ActvFunction.apply(X)
 
-
-class BoolLoss(autograd.Function):
-    @staticmethod
-    def forward(ctx, pred, target):
-        ctx.save_for_backward(pred, target)
-        loss = torch.sum(torch.abs(pred - target)).float()
-        return loss
-
-    @staticmethod 
-    def backward(ctx, grad_output):
-        pred, target = ctx.saved_tensors
-        grad_pred = torch.logical_not(target) 
-        return grad_pred, None
-
-class BooleanLoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-    def forward(self, pred, target):
-        return BoolLoss.apply(pred, target)
-
-
-def test_boolean_loss():
-    pred = torch.tensor([1, 0, 1, 0])
-    target = torch.tensor([1, 1, 0, 0])
-    loss = BooleanLoss()
-    print(loss(pred, target))
-
-if __name__ == "__main__":
-    test_boolean_loss()

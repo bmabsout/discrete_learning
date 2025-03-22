@@ -6,8 +6,9 @@ from torchvision import datasets, transforms
 from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels
 
-from bold_layers import XORLinear, BooleanLoss, BoolActvWithThreshDiscrete
+from bold_layers import XORLinear, BoolActvWithThreshDiscrete
 from bold_opt import BoldVanillaOptimizer
+from bold_loss import XORMismatchLoss, BooleanLoss
 
 class Net(nn.Module):
     def __init__(self):
@@ -105,9 +106,9 @@ def main():
                        transform=transform)
     dataset2 = datasets.MNIST('../data', train=False,
                        transform=transform)
-    
-    dataset1 = filter_dataset_by_labels(dataset1)
-    dataset2 = filter_dataset_by_labels(dataset2)
+    if not args.all_labels:
+        dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
+        dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
