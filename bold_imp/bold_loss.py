@@ -47,7 +47,7 @@ class XORMismatchLossF(autograd.Function):
     @staticmethod
     def forward(ctx, X, target):
         ctx.save_for_backward(X, target)
-        loss = torch.sum(~torch.all(X == target, dim=1))
+        loss = torch.sum(~torch.all(X == target, dim=1)).float()
         return loss
 
 
