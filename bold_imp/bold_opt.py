@@ -1,5 +1,6 @@
 import torch
 from torch import Tensor
+from utils import get_tensor_stats
 
 
 class BooleanOptimizer(torch.optim.Optimizer):
@@ -64,7 +65,7 @@ class BoldVanillaOptimizer(torch.optim.Optimizer):
 
         # ver.1 vanilla with threshold: w <- not w if (w == T and grad > thresh) or (w == F and grad < -thresh)
         param_to_flip = (param.data == 1) * (param.grad.data > self.thresh) + (param.data == 0) * (param.grad.data < -self.thresh)
-        
+        get_tensor_stats(param.grad.data)
         
         param.data[param_to_flip] = torch.logical_not(param.data[param_to_flip]).float()
         self._nb_flips += float(param_to_flip.float().sum())

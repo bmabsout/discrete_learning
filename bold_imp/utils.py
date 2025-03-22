@@ -30,7 +30,7 @@ def get_args():
     return parser.parse_args()
 
 
-def filter_dataset_by_labels(dataset, wanted_labels = [0,1]):
+def filter_dataset_by_labels(dataset, wanted_labels = [1,0]):
     """Filter a dataset to only keep samples with the specified labels.
     
     Args:
@@ -50,3 +50,28 @@ def filter_dataset_by_labels(dataset, wanted_labels = [0,1]):
     # Convert labels to binary (0 and 1)
     dataset.targets = (dataset.targets == wanted_labels[1]).float()
     return dataset
+
+def get_tensor_stats(tensor, counter=5):
+    """Compute basic statistics of a tensor.
+    
+    Args:
+        tensor: Input tensor
+        
+    Returns:
+        Dictionary containing min, max, mean, median and count statistics
+    """
+    # Initialize counter if it doesn't exist
+    if not hasattr(get_tensor_stats, 'counter'):
+        get_tensor_stats.counter = counter  # Start with 5 calls
+    
+    # Only compute stats if counter > 0
+    if get_tensor_stats.counter > 0:
+        stats = {
+            'min': tensor.min().item(),
+            'max': tensor.max().item(), 
+            'mean': tensor.mean().item(),
+            'median': tensor.median().item(),
+            'count': tensor.numel()
+        }
+        get_tensor_stats.counter -= 1  # Decrement counter
+        print(stats)
