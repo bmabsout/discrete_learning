@@ -7,15 +7,15 @@ from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels
 
 from bold_layers import XORLinear, BoolActvWithThreshDiscrete
-from bold_opt import BoldVanillaOptimizer
-from bold_loss import XORMismatchLoss
+from bold_opt import BoldVanillaOptimizer, BooleanOptimizer
+from bold_loss import XORMismatchLoss, MixtypeXORLoss
 
 class Net(nn.Module):
     def __init__(self, args):
         super(Net, self).__init__()
         self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
         self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=args.spread)
-        self.bool_fc2 = XORLinear(64, len(args.labels),bool_bprop=True)  
+        self.bool_fc2 = XORLinear(64, len(args.labels),bool_bprop=True)  # well, bool_bprop should be False. They both train regardless
         self.actv2 = BoolActvWithThreshDiscrete(64, spread=args.spread)
 
     def forward(self, x):
@@ -27,21 +27,33 @@ class Net(nn.Module):
         x = self.actv2(x)
         return x, fork
 
+class LogitsNet(nn.Module):
+    def __init__(self, args):
+        super(LogitsNet, self).__init__()
+        self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
+        self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=args.spread)
+        self.bool_fc2 = XORLinear(64, len(args.labels),bool_bprop=True)  
+
+    def forward(self, x):
+        x = x.reshape(-1,28*28)
+        x = self.bool_fc1(x)
+        x = self.actv1(x)
+        x = self.bool_fc2(x)
+        return x, None
+
 def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     model.train()
     total_flips = 0
-    criterion = XORMismatchLoss()
+    criterion = MixtypeXORLoss() if args.logits_output else XORMismatchLoss()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         data=torch.gt(data,0.5).float()
-        target = F.one_hot(target, num_classes=len(args.labels)).float()  # 10 classes for MNIST
+        if not args.logits_output:
+            target = F.one_hot(target, num_classes=len(args.labels)).float()  # 10 classes for MNIST
         
-        if optimizer is not None:
-            optimizer.zero_grad()
-        if optimizer_bool is not None:
-            optimizer_bool.zero_grad()
-        
-        output, fork = model(data)
+        zero_grads_for([optimizer, optimizer_bool])
+
+        output, _ = model(data)
         loss = criterion(output, target)
         loss.backward()
         
@@ -66,23 +78,35 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
 
 def test(args, model, device, test_loader):
     model.eval()
-    correct_preactivation = 0
-    correct_postactivation = 0
+    correct = 0
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             data=torch.gt(data,0.5).float()
-            target = F.one_hot(target, num_classes=len(args.labels)).float()  # 10 classes for MNIST
+            if not args.logits_output:
+                target = F.one_hot(target, num_classes=len(args.labels)).float()  # 10 classes for MNIST
             output, fork = model(data)
+            if not args.logits_output:
+                # correct_postactivation += torch.sum(torch.all(output == target, dim=1)).item()
+                pred = torch.argmax(fork, dim=1)
+                target_idx = torch.argmax(target, dim=1)
+                correct += (pred == target_idx).sum().item()
+            else:
+                pred = torch.argmax(output, dim=1)
+                correct += (pred == target).sum().item()
+    print(f'Test accuracy {correct / len(test_loader.dataset):.4f}\n')
 
-            correct_postactivation += torch.sum(torch.all(output == target, dim=1)).item()
+    # print(f'Test accuracy (post-activation) {correct_postactivation / len(test_loader.dataset):.4f} (pre-activation) {correct_preactivation / len(test_loader.dataset):.4f}\n')
 
-            pred = torch.argmax(fork, dim=1)
-            target_idx = torch.argmax(target, dim=1)
-            correct_preactivation += (pred == target_idx).sum().item()
+def zero_grads_for(opts):
+    for opt in opts:
+        if opt is not None:
+            opt.zero_grad()
 
-    print(f'Test accuracy (post-activation) {correct_postactivation / len(test_loader.dataset):.4f} (pre-activation) {correct_preactivation / len(test_loader.dataset):.4f}\n')
-
+def step_grads_for(opts):
+    for opt in opts:
+        if opt is not None:
+            opt.step()
 
 def main():
     args = get_args()
@@ -122,7 +146,7 @@ def main():
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
-    model = Net(args).to(device)
+    model = Net(args).to(device) if not args.logits_output else LogitsNet(args).to(device)
     
     fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr) if len(fp_params) > 0 else None

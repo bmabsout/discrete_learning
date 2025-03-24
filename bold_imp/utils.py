@@ -33,6 +33,8 @@ def get_args():
                         help='Use all labels instead of binary classification')
     parser.add_argument('--spread', type=int, default=10, metavar='N',
                         help='Spread for the activation')
+    parser.add_argument('--logits-output', action='store_true', default=False,
+                        help='Use logits output instead of boolean output')
     return parser.parse_args()
 
 def filter_dataset_by_labels(dataset, wanted_labels):
