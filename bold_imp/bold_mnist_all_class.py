@@ -7,7 +7,7 @@ from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels
 
 from bold_layers import XORLinear, BoolActvWithThreshDiscrete
-from bold_opt import BoldVanillaOptimizer, BooleanOptimizer
+from bold_opt import BoldProbabilisticOptimizer, BoldVanillaMomentumOptimizer, BoldVanillaOptimizer, BooleanOptimizer
 from bold_loss import XORMismatchLoss, MixtypeXORLoss
 
 class Net(nn.Module):
@@ -111,7 +111,7 @@ def step_grads_for(opts):
 def main():
     args = get_args()
     if args.all_labels:
-        args.labels = [0,1,2,3,4,5,6,7,8,9]
+        args.labels = range(10)
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     use_mps = not args.no_mps and torch.backends.mps.is_available()
     torch.manual_seed(args.seed)
@@ -140,9 +140,8 @@ def main():
                        transform=transform)
     dataset2 = datasets.MNIST('../data', train=False,
                        transform=transform)
-    if not args.all_labels:
-        dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
-        dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
+    dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
+    dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
@@ -150,12 +149,17 @@ def main():
     
     fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr) if len(fp_params) > 0 else None
-    # optimizer_bool = BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr)
-    optimizer_bool_vanilla = BoldVanillaOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh)
+
+    if args.use_momentum:
+        optimizer_bool = BoldVanillaMomentumOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh, momentum=args.momentum, dampening=args.dampening)
+    elif args.use_probabilistic:
+        optimizer_bool = BoldProbabilisticOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh)
+    else:
+        optimizer_bool = BoldVanillaOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh)
 
     for epoch in range(1, args.epochs + 1):
         # train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
-        train(args, model, device, train_loader, optimizer, optimizer_bool_vanilla, epoch)
+        train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
         test(args, model, device, test_loader)
 
     if args.save_model:

@@ -7,7 +7,7 @@ from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels
 
 from bold_layers import XORLinear, BoolActvWithThreshDiscrete
-from bold_opt import BoldVanillaOptimizer
+from bold_opt import BoldVanillaOptimizer, BoldVanillaMomentumOptimizer, BoldProbabilisticOptimizer
 from bold_loss import XORMismatchLoss, BooleanLoss
 
 class Net(nn.Module):
@@ -81,7 +81,7 @@ def main():
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     use_mps = not args.no_mps and torch.backends.mps.is_available()
     torch.manual_seed(args.seed)
-    assert args.lr is None, "lr has no effect in this verion. Remove the setter and use thresh instead"
+    assert args.lr is None, "lr has no effect in this version. Remove the setter and use thresh instead"
 
     if use_cuda:
         device = torch.device("cuda")
@@ -116,12 +116,36 @@ def main():
     
     fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr) if len(fp_params) > 0 else None
-    # optimizer_bool = BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr)
-    optimizer_bool_vanilla = BoldVanillaOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh)
+    
+    # Select the boolean optimizer based on command-line arguments
+    bool_params = [x for name,x in model.named_parameters() if 'bool_' in name]
+    
+    if args.use_probabilistic:
+        print(f"Using BoldProbabilisticOptimizer with threshold={args.thresh}")
+        optimizer_bool = BoldProbabilisticOptimizer(
+            bool_params, 
+            lr=args.lr, 
+            thresh=args.thresh
+        )
+    elif args.use_momentum:
+        print(f"Using BoldVanillaMomentumOptimizer with momentum={args.momentum}, dampening={args.dampening}")
+        optimizer_bool = BoldVanillaMomentumOptimizer(
+            bool_params, 
+            lr=args.lr, 
+            thresh=args.thresh,
+            momentum=args.momentum,
+            dampening=args.dampening
+        )
+    else:
+        print(f"Using BoldVanillaOptimizer with threshold={args.thresh}")
+        optimizer_bool = BoldVanillaOptimizer(
+            bool_params, 
+            lr=args.lr, 
+            thresh=args.thresh
+        )
 
     for epoch in range(1, args.epochs + 1):
-        # train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
-        train(args, model, device, train_loader, optimizer, optimizer_bool_vanilla, epoch)
+        train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
         test(model, device, test_loader)
 
     if args.save_model:
