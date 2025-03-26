@@ -60,7 +60,7 @@ def get_args():
     
     return parser.parse_args()
 
-def filter_dataset_by_labels(dataset, wanted_labels):
+def filter_dataset_by_labels(dataset, wanted_labels, debug=False):
     # Create a mapping from original labels to new sequential indices
     label_to_idx = {label: idx for idx, label in enumerate(wanted_labels)}
     
@@ -68,10 +68,37 @@ def filter_dataset_by_labels(dataset, wanted_labels):
     mask = torch.tensor([label in wanted_labels for label in dataset.targets])
     dataset.data = dataset.data[mask]
     dataset.targets = dataset.targets[mask]
+
+    if debug:
+        print("Pre-reindexing targets: ", dataset.targets[:10].tolist())
+        # Visualize the first 10 samples with their labels as captions
+        import matplotlib.pyplot as plt
+        
+        # Create a figure with subplots
+        fig, axes = plt.subplots(2, 5, figsize=(12, 5))
+        axes = axes.flatten()
+        
+        # Plot the first 10 samples
+        for i in range(min(10, len(dataset.data))):
+            # Get the image and label
+            img = dataset.data[i].numpy()
+            label = dataset.targets[i].item() if isinstance(dataset.targets[i], torch.Tensor) else dataset.targets[i]
+            
+            # Display the image
+            axes[i].imshow(img, cmap='gray')
+            axes[i].set_title(f"Label: {label} should map to {label_to_idx[label]}")
+            axes[i].axis('off')
+        
+        plt.tight_layout()
+        plt.show()
     
     # Map the original labels to sequential indices [0,1,2,...]
     # Convert tensor values to Python integers for dictionary lookup
     dataset.targets = torch.tensor([label_to_idx[label.item()] for label in dataset.targets])
+    
+    if debug:
+        # print the first 10 targets
+        print("Post-reindexing targets: ", dataset.targets[:10].tolist())
     
     return dataset
 

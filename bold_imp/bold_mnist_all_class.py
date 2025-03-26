@@ -148,7 +148,7 @@ def main():
     model = Net(args).to(device) if not args.logits_output else LogitsNet(args).to(device)
     
     fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
-    optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr) if len(fp_params) > 0 else None
+    optimizer = optim.Adam(fp_params, lr=args.lr) if len(fp_params) > 0 else None
 
     if args.use_momentum:
         optimizer_bool = BoldVanillaMomentumOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh, momentum=args.momentum, dampening=args.dampening)
