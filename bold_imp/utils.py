@@ -41,8 +41,8 @@ def get_args():
     # Model arguments
     parser.add_argument('--spread', type=int, default=10, metavar='N',
                         help='Spread for the activation function')
-    parser.add_argument('--logits-output', action='store_true', default=False,
-                        help='Use logits output instead of boolean output')
+    parser.add_argument('--activate-before-output', action='store_true', default=False,
+                        help='Apply activation function before the output layer')
     
     # Optimizer selection arguments - mutually exclusive
     optimizer_group = parser.add_argument_group('Optimizer Selection (choose one)')
@@ -57,7 +57,15 @@ def get_args():
                         help='Momentum factor (default: 0.9)')
     momentum_group.add_argument('--dampening', type=float, default=0.0,
                         help='Dampening factor for momentum (default: 0.0)')
-    
+
+    # Loss function arguments
+    loss_group = parser.add_mutually_exclusive_group()
+    loss_group.add_argument('--loss-naive', action='store_true', default=False,
+                        help='Use naive XOR mismatch loss')
+    loss_group.add_argument('--loss-int-scaling', action='store_true', default=False,
+                        help='Use integer scaling loss')
+    parser.add_argument('--loss-int-scaling-alpha', type=int, default=1000, metavar='N',
+                        help='Alpha for integer scaling loss')
     return parser.parse_args()
 
 def filter_dataset_by_labels(dataset, wanted_labels, debug=False):

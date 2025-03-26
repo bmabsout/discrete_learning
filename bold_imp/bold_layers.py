@@ -49,7 +49,7 @@ def backward_bool(ctx, Z):
 
 def backward_real(ctx, Z):
     # assert all Z values are integers
-    assert torch.all(torch.eq(Z, torch.round(Z))), "Z must contain only integer values"
+    assert torch.all(torch.eq(Z, torch.round(Z))), f"Z must contain only integer values, but got {Z}"
     X, W, B = ctx.saved_tensors
 
     """

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import Tensor , autograd
+from torch.nn import functional as F
 
 class BoolLoss(autograd.Function):
     @staticmethod
@@ -26,13 +27,13 @@ class XORMismatchLoss(nn.Module):
     """
     For a multi-class classification, the loss count the number of mismatches of the encoding.
     Input:
-        ouput: [batch_size, num_classes]
-        target: [batch_size, num_classes]
+        output: [batch_size, num_classes]
+        target: [batch_size]
             
-        the value type for both is boolean, represented by 0 and 1. The output is not necessarily be one-hot encoded.
+        the value type for output is boolean, represented by 0 and 1. The output is not necessarily be one-hot encoded.
         which means the output might fail to produce the top-1 prediction. 
         
-        The target requires to be one-hot encoded.
+        target contains the indices of the correct classes.
 
     Output:
         loss: int. The number of mismatches encoding across the batch.
@@ -47,14 +48,17 @@ class XORMismatchLossF(autograd.Function):
     @staticmethod
     def forward(ctx, X, target):
         ctx.save_for_backward(X, target)
-        loss = torch.sum(~torch.all(X == target, dim=1)).float()
+        # Convert target indices to one-hot for comparison
+        target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
+        loss = torch.sum(~torch.all(X == target_onehot, dim=1)).float()
         return loss
 
-
     @staticmethod
-    def backward(ctx, Z):
-        _, target = ctx.saved_tensors
-        return torch.logical_not(target), None
+    def backward(ctx, grad_output):
+        X, target = ctx.saved_tensors
+        # Convert target indices to one-hot for gradient computation
+        target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
+        return torch.logical_not(target_onehot) * grad_output, None
 
 class MixtypeXORLoss(nn.Module):
     """
@@ -122,6 +126,70 @@ class MixtypeXORLossF(autograd.Function):
         # For incorrect class index we have dL/dy = T, indeed, when y gets larger, L increases. 
         # because True means the direction of change is the same.
         return grad_X * grad_output, None
+
+class IntScalingLoss(nn.Module):
+    """
+    Input:
+        X.shape = (batch_size, num_classes)
+        X.dtype = int  (the model logits output)
+        target.shape = (batch_size, )
+        target.dtype = int (the index of the correct class)
+
+    Forward pass:
+        1. Centering to zero. The logits is added by -min(logits). Output X'
+        2. scaling everything by alpha. X'' = alpha * X', target' = alpha * target
+        3. Integer division X''' = X'' // max(X'). 
+        4. Calculate distance(X''', target')
+
+    Backward pass:
+        G_X = target' - X'''
+    """
+    def __init__(self, alpha: int):
+        super().__init__()
+        self.alpha = alpha
+
+    def forward(self, X, target):
+        return IntScalingLossF.apply(X, target, self.alpha)
+
+class IntScalingLossF(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, target, alpha):
+        # Center each sample independently by finding min along dim=1
+        X_centered = X - torch.min(X, dim=1, keepdim=True)[0]
+        X_scaled = X_centered * alpha
+        X_out = X_scaled // torch.max(X_centered, dim=1, keepdim=True)[0]
+        if torch.isnan(X_out).any():
+            print("NaN values detected in X_out, replacing with 1")
+            X_out = torch.where(torch.isnan(X_out), torch.ones_like(X_out), X_out)
+        target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
+        target_scaled = target_onehot * alpha
+        loss = torch.sum(torch.abs(X_out - target_scaled))
+        ctx.save_for_backward(X, target, X_out, target_scaled)  # Save X_out in context
+        return loss
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        _, _, X_out, target_scaled = ctx.saved_tensors  # Retrieve X_out from context
+        G_X = X_out - target_scaled
+        return G_X * grad_output, None, None
+            
+
+def test_int_scaling_loss():
+    # Test case 1
+    print("Test case 1:")
+    input = torch.tensor([[100., 200., -10., 50.], [-30., -20., 10., 100.]], requires_grad=True)
+    target = torch.tensor([0, 1])
+    loss = IntScalingLoss(alpha=1000)
+    output = loss(input, target)
+    print("forward pass logits:")
+    print(output)
+    output.backward()
+    
+    print("\nTesting backward pass:")
+    print("Input gradients:")
+    print(input.grad)
+
+
 
 def test_mixtype_xor_loss():
     # Test case 1
@@ -208,4 +276,5 @@ def test_xor_mismatch_loss():
 
 if __name__ == "__main__":
     # test_xor_mismatch_loss()
-    test_mixtype_xor_loss()
+    # test_mixtype_xor_loss()
+    test_int_scaling_loss()

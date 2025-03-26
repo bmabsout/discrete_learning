@@ -8,7 +8,7 @@ from utils import get_args, filter_dataset_by_labels
 
 from bold_layers import XORLinear, BoolActvWithThreshDiscrete
 from bold_opt import BoldProbabilisticOptimizer, BoldVanillaMomentumOptimizer, BoldVanillaOptimizer, BooleanOptimizer
-from bold_loss import XORMismatchLoss, MixtypeXORLoss
+from bold_loss import XORMismatchLoss, MixtypeXORLoss, IntScalingLoss
 
 class Net(nn.Module):
     def __init__(self, args):
@@ -32,7 +32,7 @@ class LogitsNet(nn.Module):
         super(LogitsNet, self).__init__()
         self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
         self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=args.spread)
-        self.bool_fc2 = XORLinear(64, len(args.labels),bool_bprop=True)  
+        self.bool_fc2 = XORLinear(64, len(args.labels),bool_bprop=is_loss_gradient_boolean(args))  
 
     def forward(self, x):
         x = x.reshape(-1,28*28)
@@ -41,18 +41,23 @@ class LogitsNet(nn.Module):
         x = self.bool_fc2(x)
         return x, None
 
+def is_loss_gradient_boolean(args):
+    assert args.activate_before_output == False, "Has no effect when model applies activation before output. Please double check."
+    if args.loss_int_scaling:
+        return False
+    elif args.loss_naive:
+        return True
+    else:
+        raise ValueError("Choose a loss function from --loss-X")
+
 def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     model.train()
     total_flips = 0
-    criterion = MixtypeXORLoss() if args.logits_output else XORMismatchLoss()
+    criterion = get_criterion(args)
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
-        data=torch.gt(data,0.5).float()
-        if not args.logits_output:
-            target = F.one_hot(target, num_classes=len(args.labels)).float()  # 10 classes for MNIST
-        
-        zero_grads_for([optimizer, optimizer_bool])
 
+        zero_grads_for([optimizer, optimizer_bool])
         output, _ = model(data)
         loss = criterion(output, target)
         loss.backward()
@@ -82,21 +87,10 @@ def test(args, model, device, test_loader):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            data=torch.gt(data,0.5).float()
-            if not args.logits_output:
-                target = F.one_hot(target, num_classes=len(args.labels)).float()  # 10 classes for MNIST
             output, fork = model(data)
-            if not args.logits_output:
-                # correct_postactivation += torch.sum(torch.all(output == target, dim=1)).item()
-                pred = torch.argmax(fork, dim=1)
-                target_idx = torch.argmax(target, dim=1)
-                correct += (pred == target_idx).sum().item()
-            else:
-                pred = torch.argmax(output, dim=1)
-                correct += (pred == target).sum().item()
+            pred = torch.argmax(output, dim=1)
+            correct += (pred == target).sum().item()
     print(f'Test accuracy {correct / len(test_loader.dataset):.4f}\n')
-
-    # print(f'Test accuracy (post-activation) {correct_postactivation / len(test_loader.dataset):.4f} (pre-activation) {correct_preactivation / len(test_loader.dataset):.4f}\n')
 
 def zero_grads_for(opts):
     for opt in opts:
@@ -107,6 +101,26 @@ def step_grads_for(opts):
     for opt in opts:
         if opt is not None:
             opt.step()
+
+def get_criterion(args):
+    if args.activate_before_output:
+        print("Model applies activation before output. Overwrite criterion to XORMismatchLoss")
+        return XORMismatchLoss()
+    else:
+        if args.loss_naive:
+            print("Use MixtypeXORLoss")
+            return MixtypeXORLoss()
+        elif args.loss_int_scaling:
+            print(f"Use IntScalingLoss with alpha={args.loss_int_scaling_alpha}")
+            return IntScalingLoss(alpha=args.loss_int_scaling_alpha)
+        else:
+            raise ValueError("Choose a loss function from --loss-X")
+        
+def get_model(args):
+    if args.activate_before_output:
+        return Net(args)
+    else:
+        return LogitsNet(args)
 
 def main():
     args = get_args()
@@ -134,7 +148,8 @@ def main():
         test_kwargs.update(cuda_kwargs)
 
     transform=transforms.Compose([
-        transforms.ToTensor()
+        transforms.ToTensor(),
+        transforms.Lambda(lambda x: torch.gt(x, 0.5).float())  # Add thresholding to transformation pipeline
         ])
     dataset1 = datasets.MNIST('../data', train=True, download=True,
                        transform=transform)
@@ -145,7 +160,7 @@ def main():
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
-    model = Net(args).to(device) if not args.logits_output else LogitsNet(args).to(device)
+    model = get_model(args).to(device)
     
     fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
     optimizer = optim.Adam(fp_params, lr=args.lr) if len(fp_params) > 0 else None
@@ -158,7 +173,6 @@ def main():
         optimizer_bool = BoldVanillaOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh)
 
     for epoch in range(1, args.epochs + 1):
-        # train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
         train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
         test(args, model, device, test_loader)
 
