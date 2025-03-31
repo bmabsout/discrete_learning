@@ -102,7 +102,7 @@ class MixtypeXORLossF(autograd.Function):
         mask.scatter_(1, target.unsqueeze(1), 0)  # Set correct class to 0
         
         # Compute loss for correct and incorrect classes
-        loss_corr = -torch.sum(X[torch.arange(batch_size), target])  # Sum correct class logits
+        loss_corr = -num_classes * torch.sum(X[torch.arange(batch_size), target])  # Sum correct class logits
         loss_incorr = torch.sum(X * mask)  # Sum incorrect class logits
         
         return loss_corr + loss_incorr
