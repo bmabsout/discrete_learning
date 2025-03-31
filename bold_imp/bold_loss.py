@@ -112,12 +112,12 @@ class MixtypeXORLossF(autograd.Function):
         X, target = ctx.saved_tensors
         batch_size = X.size(0)
         num_classes = X.size(1)
-        
+
         # Initialize gradient tensor
         grad_X = torch.ones_like(X)  # All incorrect classes get 1 (the representation of T)
         
         # Set correct class gradients to 0 (the representation of F)
-        grad_X[torch.arange(batch_size), target] = 0
+        grad_X[torch.arange(batch_size), target] = -num_classes
 
         # the G_X shall be interpreted as boolean gradients, i.e. the prev bold layer should have bool_backprop=True
         # the interpretation is very straightforward.

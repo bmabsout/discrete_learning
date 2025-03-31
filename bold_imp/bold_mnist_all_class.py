@@ -46,7 +46,7 @@ def is_loss_gradient_boolean(args):
     if args.loss_int_scaling:
         return False
     elif args.loss_naive:
-        return True
+        return False
     else:
         raise ValueError("Choose a loss function from --loss-X")
 
