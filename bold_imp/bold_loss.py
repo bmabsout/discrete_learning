@@ -91,7 +91,6 @@ class MixtypeXORLoss(nn.Module):
 class MixtypeXORLossF(autograd.Function):
     @staticmethod
     def forward(ctx, X, target):
-        ctx.save_for_backward(X, target)
         # X shape: [batch_size, num_classes]
         # target shape: [batch_size]
         
@@ -100,6 +99,7 @@ class MixtypeXORLossF(autograd.Function):
         num_classes = X.size(1)
         mask = torch.ones(batch_size, num_classes, device=X.device)
         mask.scatter_(1, target.unsqueeze(1), 0)  # Set correct class to 0
+        ctx.save_for_backward(X, target, mask)
         
         # Compute loss for correct and incorrect classes
         loss_corr = -num_classes * torch.sum(X[torch.arange(batch_size), target])  # Sum correct class logits
@@ -109,14 +109,17 @@ class MixtypeXORLossF(autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        X, target = ctx.saved_tensors
+        X, target, mask = ctx.saved_tensors
         batch_size = X.size(0)
         num_classes = X.size(1)
-
+        # Get the number of instances per class
+        # num_instances_per_class = torch.sum(1-mask, dim=0)
+        # print(num_instances_per_class)
+        # print("sum of X:", torch.sum(X, dim=0))
         # Initialize gradient tensor
-        grad_X = torch.ones_like(X)  # All incorrect classes get 1 (the representation of T)
+        grad_X = torch.ones_like(X)  # All incorrect classes get 1
         
-        # Set correct class gradients to 0 (the representation of F)
+        # Set correct class gradients to -1
         grad_X[torch.arange(batch_size), target] = -num_classes
 
         # the G_X shall be interpreted as boolean gradients, i.e. the prev bold layer should have bool_backprop=True

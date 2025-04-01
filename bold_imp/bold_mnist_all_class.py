@@ -7,38 +7,66 @@ from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels
 
 from bold_layers import XORLinear, BoolActvWithThreshDiscrete
-from bold_opt import BoldProbabilisticOptimizer, BoldVanillaMomentumOptimizer, BoldVanillaOptimizer, BooleanOptimizer
+from bold_opt import BaseBooleanOptimizer, BoldProbabilisticOptimizer, BoldVanillaMomentumOptimizer, BoldVanillaOptimizer, BooleanOptimizer, BoldProbabilisticMomentumOptimizer
 from bold_loss import XORMismatchLoss, MixtypeXORLoss, IntScalingLoss
 
 class Net(nn.Module):
     def __init__(self, args):
         super(Net, self).__init__()
-        self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
-        self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=args.spread)
-        self.bool_fc2 = XORLinear(64, len(args.labels),bool_bprop=True)  # well, bool_bprop should be False. They both train regardless
-        self.actv2 = BoolActvWithThreshDiscrete(64, spread=args.spread)
+        # Define layer sizes with input and output dimensions
+        with_input_output = [28*28]+ args.layer_sizes + [len(args.labels)]
+        
+        # Create layers dynamically
+        self.bool_layers = nn.ModuleList()
+        self.actv_layers = nn.ModuleList()
+        
+        # Create all layers
+        for i in range(len(with_input_output) - 1):
+            # Last layer uses bool_bprop=True, others use False
+            bool_bprop = (i == len(with_input_output) - 2)
+            self.bool_layers.append(XORLinear(with_input_output[i], with_input_output[i+1], bool_bprop=bool_bprop))
+            self.actv_layers.append(BoolActvWithThreshDiscrete(with_input_output[i], spread=args.spread))
 
     def forward(self, x):
-        x = x.reshape(-1,28*28)
-        x = self.bool_fc1(x)
-        x = self.actv1(x)
-        x = self.bool_fc2(x)
-        fork = x.detach()
-        x = self.actv2(x)
+        x = x.reshape(-1, 28*28)
+        
+        # Pass through all layers except the last one
+        for i in range(len(self.bool_layers)):
+            x = self.bool_layers[i](x)
+            # Before the last activation, create a fork for the output
+            if i == len(self.bool_layers) - 1:
+                fork = x.detach()
+            x = self.actv_layers[i](x)
+        
         return x, fork
 
 class LogitsNet(nn.Module):
     def __init__(self, args):
         super(LogitsNet, self).__init__()
-        self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
-        self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=args.spread)
-        self.bool_fc2 = XORLinear(64, len(args.labels),bool_bprop=is_loss_gradient_boolean(args))  
+        # Define layer sizes with input and output dimensions
+
+        with_input_output = [28*28]+ args.layer_sizes + [len(args.labels)]
+        # Create layers dynamically
+        self.bool_layers = nn.ModuleList()
+        self.actv_layers = nn.ModuleList()
+        
+        # Create all layers except the last one
+        for i in range(len(with_input_output) - 1):
+            self.bool_layers.append(XORLinear(with_input_output[i], with_input_output[i+1], bool_bprop=False))
+            # For activation, we use the input size for the spread parameter
+            self.actv_layers.append(BoolActvWithThreshDiscrete(with_input_output[i], spread=args.spread))
 
     def forward(self, x):
-        x = x.reshape(-1,28*28)
-        x = self.bool_fc1(x)
-        x = self.actv1(x)
-        x = self.bool_fc2(x)
+        x = x.reshape(-1, 28*28)
+        
+        # Pass through all layers except the last one
+        for i in range(len(self.bool_layers) - 1):
+            x = self.bool_layers[i](x)
+            x = self.actv_layers[i](x)
+        
+        # Last layer (no activation after it)
+        x = self.bool_layers[-1](x)
+        
         return x, None
 
 def is_loss_gradient_boolean(args):
@@ -73,9 +101,17 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
             batch_flips = 0
         
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tFlips: {}'.format(
+            pred = torch.argmax(output, dim=1)
+            train_acc = 100. * pred.eq(target).sum().item() / len(target)
+            print()
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tAcc: {:.2f}%\tFlips: {}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item(), batch_flips))
+                100. * batch_idx / len(train_loader), loss.item(), train_acc, batch_flips), end="\t")
+            
+            # Log statistics using the new log_stats method
+            if isinstance(optimizer_bool, BaseBooleanOptimizer) and optimizer_bool is not None:
+                optimizer_bool.log_stats()
+            
             if args.dry_run:
                 break
     
@@ -165,12 +201,49 @@ def main():
     fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
     optimizer = optim.Adam(fp_params, lr=args.lr) if len(fp_params) > 0 else None
 
-    if args.use_momentum:
-        optimizer_bool = BoldVanillaMomentumOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh, momentum=args.momentum, dampening=args.dampening)
-    elif args.use_probabilistic:
-        optimizer_bool = BoldProbabilisticOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh)
+    bool_params = [x for name,x in model.named_parameters() if 'bool_' in name]
+    
+    # Common parameters
+    optimizer_params = {
+        'params': bool_params,
+        'lr': args.lr
+    }
+    
+    # Build optimizer configuration based on args
+    if args.use_probabilistic:
+        if args.use_momentum:
+            print(f"Using BoldProbabilisticMomentumOptimizer with flip ratio={args.flip_ratio:.6f}, "
+                  f"momentum={args.momentum}, dampening={args.dampening}")
+            optimizer_class = BoldProbabilisticMomentumOptimizer
+            optimizer_params.update({
+                'momentum': args.momentum,
+                'dampening': args.dampening,
+                'flip_ratio': args.flip_ratio
+            })
+        else:
+            print(f"Using BoldProbabilisticOptimizer with flip ratio={args.flip_ratio:.6f}")
+            optimizer_class = BoldProbabilisticOptimizer
+            optimizer_params.update({
+                'flip_ratio': args.flip_ratio
+            })
+    elif args.use_momentum:
+        print(f"Using BoldVanillaMomentumOptimizer with threshold={args.thresh}, "
+              f"momentum={args.momentum}, dampening={args.dampening}")
+        optimizer_class = BoldVanillaMomentumOptimizer
+        optimizer_params.update({
+            'thresh': args.thresh,
+            'momentum': args.momentum,
+            'dampening': args.dampening
+        })
     else:
-        optimizer_bool = BoldVanillaOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr, thresh=args.thresh)
+        print(f"Using BoldVanillaOptimizer with threshold={args.thresh}")
+        optimizer_class = BoldVanillaOptimizer
+        optimizer_params.update({
+            'thresh': args.thresh
+        })
+    
+    # Create the optimizer with the selected configuration
+    optimizer_bool = optimizer_class(**optimizer_params)
 
     for epoch in range(1, args.epochs + 1):
         train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)

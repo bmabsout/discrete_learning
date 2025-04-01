@@ -138,7 +138,7 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         dist = torch.abs(X - sup // 2)
         # Create a mask where distance is less than spread
         G_X = torch.zeros_like(dist)
-        G_X[dist < spread] = 1.0
+        G_X[dist < spread] = 1
  
         G_X = Z * G_X        
         return G_X, None, None

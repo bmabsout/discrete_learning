@@ -30,7 +30,7 @@ def get_args():
     parser.add_argument('--thresh', type=int, default=150, metavar='N',
                         help='Threshold for weight flipping. Higher values make flipping less likely. '
                              'For vanilla optimizer: flips when grad > thresh. '
-                             'For probabilistic: 100% flip probability at threshold.')
+                             'For probabilistic: 100%% flip probability at threshold.')
     
     # Dataset arguments
     parser.add_argument('--labels', type=int, nargs='+', default=[1,0],
@@ -43,6 +43,8 @@ def get_args():
                         help='Spread for the activation function')
     parser.add_argument('--activate-before-output', action='store_true', default=False,
                         help='Apply activation function before the output layer')
+    parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
+                        help='List of hidden layer sizes (default: [64])')
     
     # Optimizer selection arguments - mutually exclusive
     optimizer_group = parser.add_argument_group('Optimizer Selection (choose one)')
@@ -57,6 +59,11 @@ def get_args():
                         help='Momentum factor (default: 0.9)')
     momentum_group.add_argument('--dampening', type=float, default=0.0,
                         help='Dampening factor for momentum (default: 0.0)')
+                        
+    # Probabilistic parameters
+    prob_group = parser.add_argument_group('Probabilistic Parameters (used with --use-probabilistic)')
+    prob_group.add_argument('--flip-ratio', type=float, default=0.001,
+                        help='Target percentage of parameters to flip per step (default: 0.001, i.e., 0.1%%)')
 
     # Loss function arguments
     loss_group = parser.add_mutually_exclusive_group()
