@@ -5,7 +5,78 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
-from BConv2d import XORConv2d, BoolActvWithThresh
+
+class MixtypeXORLinear(nn.Linear):
+    """
+    Extend the input to be any non-boolean data.
+    This layer assumes the gradient received are non-boolean.
+    The bias is turned off by default.
+    """
+    def __init__(self, in_features : int , out_features : int , bool_bprop : bool = False , ** kwargs ):
+        kwargs['bias'] = kwargs.get('bias', False)
+        super(MixtypeXORLinear, self).__init__(in_features, out_features, **kwargs)
+        if bool_bprop:
+            raise NotImplementedError("Boolean backprop is not implemented for MixtypeXORLinear")
+        self.bool_bprop = bool_bprop
+  
+    def reset_parameters(self):
+        self.weight = nn.Parameter(torch.randint(0, 2, self.weight.shape).float())#
+  
+        if self.bias is not None:
+          self.bias = nn.Parameter(torch.randint(0, 2, (self.out_features,)).float())
+  
+    def forward (self, X) :
+        return MixtypeXORFunction.apply(X, self.weight , self.bias , self.bool_bprop)
+
+class MixtypeXORFunction(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, W, B, bool_bprop: bool):
+        ctx.save_for_backward(X, W, B)
+        ctx.bool_bprop = bool_bprop
+
+        # Elementwise XOR logic
+        # S = torch.logical_xor(X[:, None, :], W[None, :, :])
+        S = X[:, None, :] * (1 - 2 * W[None, :, :])
+
+        # Sum over the input dimension
+        # S = S.sum(dim=2) + B
+        S = S.sum(dim=2)
+
+        # 0-centered for use with BatchNorm when preferred
+        # S = S - W.shape[1] / 2
+    
+        return S
+
+    @staticmethod
+    def backward(ctx, Z):
+        assert torch.all(torch.eq(Z, torch.round(Z))), f"Z must contain only integer values, but got {Z}"
+        X, W, B = ctx.saved_tensors
+
+        """
+        Boolean variation of input processed using torch avoiding loop:
+        -> xor(Z: Real, W: Boolean) = -Z * emb(W)
+        -> emb(W): T->1, F->-1 => emb(W) = 2W - 1
+        => delta(Loss)/delta(X) = Z*(1-2W)
+        """
+        G_X = Z.mm(1 - 2 * W)
+
+        """
+        Boolean variation of weights processed using torch avoiding loop:
+        -> xor(Z: Real, X: Real) = -Z * X
+        => delta(Loss)/delta(W) = ??
+        """
+        # G_W = Z.t().mm(1 - 2 * X)
+        G_W = -Z.t().mm(X)
+
+        """ Boolean variation of bias """
+        if B is not None:
+            G_B = Z.sum(dim=0)
+
+        # Return
+        # return G_X, G_W, G_B
+        return G_X, G_W, None, None
+
+
 
 def backward_bool(ctx, Z):
     # Assert that Z only contains binary values (0 or 1)
@@ -182,4 +253,18 @@ class BoolActv(nn.Module):
         
     def forward(self, X) :
         return ActvFunction.apply(X)
+
+
+def test_mixtype_xor_linear():
+    layer = MixtypeXORLinear(10, 5)
+    x = torch.randint(0, 2, (32, 10)).float()
+    print("x.shape: ", x.shape)
+    print("output shape: ", layer(x).shape)
+    output = layer(x)
+    output = output.sum()
+    output.backward()
+    print("param grads: ", layer.weight.grad)
+
+if __name__ == "__main__":
+    test_mixtype_xor_linear()
 
