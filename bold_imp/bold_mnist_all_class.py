@@ -6,7 +6,7 @@ from torchvision import datasets, transforms
 from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels
 
-from bold_layers import XORLinear, BoolActvWithThreshDiscrete
+from bold_layers import MixtypeXORLinear, XORLinear, BoolActvWithThreshDiscrete
 from bold_opt import (
     BaseBooleanOptimizer,
     create_vanilla_optimizer,

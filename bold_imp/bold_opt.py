@@ -174,16 +174,13 @@ def create_probabilistic_optimizer(params, lr: float, flip_ratio: float = 0.001)
 
 
 def create_probabilistic_momentum_optimizer(
-    params, 
-    lr: float, 
-    momentum: float = 0.9, 
-    dampening: float = 0.0, 
-    flip_ratio: float = 0.001
+    params, lr: Optional[float] = None, momentum: float = 0.9, 
+    dampening: float = 0.0, flip_ratio: float = 0.001
 ) -> BaseBooleanOptimizer:
-    """Create a boolean optimizer with probabilistic flipping and momentum."""
+    """Creates a probabilistic optimizer with momentum"""
     return BaseBooleanOptimizer(
         params,
-        lr=lr,
-        gradient_accumulator=get_momentum_accumulator(momentum=momentum, dampening=dampening),
+        defaults=dict(lr=lr, momentum=momentum, dampening=dampening, flip_ratio=flip_ratio),
+        gradient_accumulator=get_momentum_accumulator(momentum, dampening),
         flip_decider=get_probabilistic_decider(flip_ratio)
-    ) 
+    )
