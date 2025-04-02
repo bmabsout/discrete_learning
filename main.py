@@ -10,6 +10,9 @@ from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
 
+# Import the create_vanilla_optimizer from our bold_imp package
+from bold_imp.bold_opt import create_vanilla_optimizer
+
 
 
      
@@ -184,38 +187,6 @@ class XORLinear(nn.Linear):
     def forward (self, X) :
         return XORFunction.apply(X, self.weight , self.bias , self.bool_bprop)
 
-class BooleanOptimizer(torch.optim.Optimizer):
-
-    def __init__(self, params, lr: float):
-        super(BooleanOptimizer, self).__init__(params, dict(lr=lr))
-        for param_group in self.param_groups:
-            param_group['accums'] = [torch.zeros_like(p.data) for p in param_group['params']]
-            param_group['ratios'] = [0 for p in param_group['params']]
-        self._nb_flips = 0
-
-    @property
-    def nb_flips(self):
-        n = self._nb_flips
-        self._nb_flips = 0
-        return n
-
-    def step(self):
-        for param_group in self.param_groups:
-            for idx, p in enumerate(param_group['params']):
-                self.update(p, param_group, idx)
-
-    def update(self, param: Tensor, param_group: dict, idx: int):
-        
-        accum = param_group['ratios'][idx] * param_group['accums'][idx] + param_group['lr'] * param.grad.data
-        param_group['accums'][idx] = accum
-        #print(param.grad.data.mean(),accum.mean())
-        param_to_flip = accum * (2 * param.data - 1) >= 1
-        param.data[param_to_flip] = torch.logical_not(param.data[param_to_flip]).float()
-        param_group['accums'][idx][param_to_flip] = 0.
-        param_group['ratios'][idx] = 1 - param_to_flip.float().mean()
-        self._nb_flips += float(param_to_flip.float().sum())
-
-
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
@@ -350,7 +321,12 @@ def main():
     
     
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr)
-    optimizer_bool=BooleanOptimizer([x for name,x in model.named_parameters() if 'bool_' in name], lr=args.lr*10)
+    # Use our new factory function instead of BooleanOptimizer
+    optimizer_bool = create_vanilla_optimizer(
+        [x for name,x in model.named_parameters() if 'bool_' in name], 
+        lr=args.lr*10, 
+        thresh=1
+    )
 
     for epoch in range(1, args.epochs + 1):
         train(args, model, device, train_loader, [optimizer_bool], epoch)

@@ -7,7 +7,13 @@ from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels
 
 from bold_layers import XORLinear, BoolActvWithThreshDiscrete
-from bold_opt import BaseBooleanOptimizer, BoldVanillaOptimizer, BoldVanillaMomentumOptimizer, BoldProbabilisticOptimizer, BoldProbabilisticMomentumOptimizer
+from bold_opt import (
+    BaseBooleanOptimizer, 
+    create_vanilla_optimizer,
+    create_momentum_optimizer, 
+    create_probabilistic_optimizer, 
+    create_probabilistic_momentum_optimizer
+)
 from bold_loss import XORMismatchLoss, BooleanLoss
 
 class Net(nn.Module):
@@ -125,47 +131,42 @@ def main():
     # Select the boolean optimizer based on command-line arguments
     bool_params = [x for name,x in model.named_parameters() if 'bool_' in name]
     
-    # Common parameters
-    optimizer_params = {
-        'params': bool_params,
-        'lr': args.lr
-    }
-    
-    # Build optimizer configuration based on args
+    # Create the optimizer with the selected configuration
     if args.use_probabilistic:
         if args.use_momentum:
-            print(f"Using BoldProbabilisticMomentumOptimizer with flip ratio={args.flip_ratio:.6f}, "
+            print(f"Using probabilistic momentum optimizer with flip ratio={args.flip_ratio:.6f}, "
                   f"momentum={args.momentum}, dampening={args.dampening}")
-            optimizer_class = BoldProbabilisticMomentumOptimizer
-            optimizer_params.update({
-                'momentum': args.momentum,
-                'dampening': args.dampening,
-                'flip_ratio': args.flip_ratio
-            })
+            optimizer_bool = create_probabilistic_momentum_optimizer(
+                bool_params,
+                lr=args.lr,
+                momentum=args.momentum,
+                dampening=args.dampening,
+                flip_ratio=args.flip_ratio
+            )
         else:
-            print(f"Using BoldProbabilisticOptimizer with flip ratio={args.flip_ratio:.6f}")
-            optimizer_class = BoldProbabilisticOptimizer
-            optimizer_params.update({
-                'flip_ratio': args.flip_ratio
-            })
+            print(f"Using probabilistic optimizer with flip ratio={args.flip_ratio:.6f}")
+            optimizer_bool = create_probabilistic_optimizer(
+                bool_params,
+                lr=args.lr,
+                flip_ratio=args.flip_ratio
+            )
     elif args.use_momentum:
-        print(f"Using BoldVanillaMomentumOptimizer with threshold={args.thresh}, "
+        print(f"Using momentum optimizer with threshold={args.thresh}, "
               f"momentum={args.momentum}, dampening={args.dampening}")
-        optimizer_class = BoldVanillaMomentumOptimizer
-        optimizer_params.update({
-            'thresh': args.thresh,
-            'momentum': args.momentum,
-            'dampening': args.dampening
-        })
+        optimizer_bool = create_momentum_optimizer(
+            bool_params,
+            lr=args.lr,
+            thresh=args.thresh,
+            momentum=args.momentum,
+            dampening=args.dampening
+        )
     else:
-        print(f"Using BoldVanillaOptimizer with threshold={args.thresh}")
-        optimizer_class = BoldVanillaOptimizer
-        optimizer_params.update({
-            'thresh': args.thresh
-        })
-    
-    # Create the optimizer with the selected configuration
-    optimizer_bool = optimizer_class(**optimizer_params)
+        print(f"Using vanilla optimizer with threshold={args.thresh}")
+        optimizer_bool = create_vanilla_optimizer(
+            bool_params,
+            lr=args.lr,
+            thresh=args.thresh
+        )
 
     for epoch in range(1, args.epochs + 1):
         train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
