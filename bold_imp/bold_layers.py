@@ -200,7 +200,7 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         ctx.sup = sup
         ctx.spread = spread
 
-        S = torch.ge(X,sup // 2).float()
+        S = 2 * torch.ge(X,sup // 2).float() - 1
         return S
 
     @staticmethod
