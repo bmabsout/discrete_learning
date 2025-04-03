@@ -126,7 +126,8 @@ def backward_real(ctx, Z):
     -> emb(W): T->1, F->-1 => emb(W) = 2W - 1
     => delta(Loss)/delta(X) = Z*(1-2W)
     """
-    G_X = Z.mm(1 - 2 * W)
+    # G_X = Z.mm(1 - 2 * W)
+    G_X = Z.mm(-W)
 
     """
     Boolean variation of weights processed using torch avoiding loop:
@@ -134,7 +135,8 @@ def backward_real(ctx, Z):
     -> emb(X): T->1, F->-1 => emb(X) = 2X - 1
     => delta(Loss)/delta(W) = Z^T * (1-2X)
     """
-    G_W = Z.t().mm(1 - 2 * X)
+    # G_W = Z.t().mm(1 - 2 * X)
+    G_W = Z.t().mm(-X)
 
     """ Boolean variation of bias """
     if B is not None:
@@ -151,7 +153,8 @@ class XORFunction(autograd.Function):
         ctx.bool_bprop = bool_bprop
 
         # Elementwise XOR logic
-        S = torch.logical_xor(X[:, None, :], W[None, :, :])
+        S = -X[:, None, :] * W[None, :, :]
+        
 
         # Sum over the input dimension
         S = S.sum(dim=2) + B
@@ -179,10 +182,13 @@ class XORLinear(nn.Linear):
         self.bool_bprop = bool_bprop
   
     def reset_parameters(self):
-        self.weight = nn.Parameter(torch.randint(0, 2, self.weight.shape).float())#
+        # initialize the weights with either 1.0 or -1.0
+        random_values = torch.randint(0, 2, self.weight.shape)
+        self.weight = nn.Parameter(2 * random_values.float() - 1)
   
         if self.bias is not None:
-          self.bias = nn.Parameter(torch.randint(0, 2, (self.out_features,)).float())
+            self.bias = nn.Parameter(2 * torch.randint(0, 2, (self.out_features,)).float() - 1)
+
   
     def forward (self, X) :
         return XORFunction.apply(X, self.weight , self.bias , self.bool_bprop)

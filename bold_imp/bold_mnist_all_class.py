@@ -60,7 +60,9 @@ class LogitsNet(nn.Module):
         for i in range(len(with_input_output) - 1):
             self.bool_layers.append(XORLinear(with_input_output[i], with_input_output[i+1], bool_bprop=False))
             # For activation, we use the input size for the spread parameter
-            self.actv_layers.append(BoolActvWithThreshDiscrete(with_input_output[i], spread=args.spread))
+            # self.actv_layers.append(BoolActvWithThreshDiscrete(with_input_output[i], spread=args.spread))
+            # when we use -1 for False, the center become 0
+            self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread))
 
     def forward(self, x):
         x = x.reshape(-1, 28*28)
@@ -191,7 +193,7 @@ def main():
 
     transform=transforms.Compose([
         transforms.ToTensor(),
-        transforms.Lambda(lambda x: torch.gt(x, 0.5).float())  # Add thresholding to transformation pipeline
+        transforms.Lambda(lambda x: 2 * torch.gt(x, 0.5).float() - 1)  # Add thresholding to transformation pipeline
         ])
     dataset1 = datasets.MNIST('../data', train=True, download=True,
                        transform=transform)
