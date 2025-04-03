@@ -36,10 +36,9 @@ class MixtypeXORFunction(autograd.Function):
 
         # Elementwise XOR logic
         # S = torch.logical_xor(X[:, None, :], W[None, :, :])
-        S = X[:, None, :] * (1 - 2 * W[None, :, :])
+        S = (2 * X[:, None, :] - 1) * (1 - 2 * W[None, :, :])
 
         # Sum over the input dimension
-        # S = S.sum(dim=2) + B
         S = S.sum(dim=2)
 
         # 0-centered for use with BatchNorm when preferred
@@ -51,6 +50,7 @@ class MixtypeXORFunction(autograd.Function):
     def backward(ctx, Z):
         assert torch.all(torch.eq(Z, torch.round(Z))), f"Z must contain only integer values, but got {Z}"
         X, W, B = ctx.saved_tensors
+        assert torch.all(torch.logical_or(X == 0, X == 1)), "X must contain only binary values (0 or 1)"
 
         """
         Boolean variation of input processed using torch avoiding loop:
@@ -65,15 +65,12 @@ class MixtypeXORFunction(autograd.Function):
         -> xor(Z: Real, X: Real) = -Z * X
         => delta(Loss)/delta(W) = ??
         """
-        # G_W = Z.t().mm(1 - 2 * X)
-        G_W = -Z.t().mm(X)
+        G_W = Z.t().mm(1 - 2 * X)
 
         """ Boolean variation of bias """
         if B is not None:
             G_B = Z.sum(dim=0)
 
-        # Return
-        # return G_X, G_W, G_B
         return G_X, G_W, None, None
 
 

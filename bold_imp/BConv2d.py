@@ -39,6 +39,8 @@ class XORConv2d(nn.Module):
     def reset_parameters(self):
         # initialize the weights with either 0 or 1 in float
         binary_values = torch.randint(0, 2, self.weight.shape, dtype=torch.float)
+        print("binary_values")
+        print(binary_values.shape)
         self.weight.data = binary_values
 
         if self.bias is not None:
@@ -60,21 +62,34 @@ class XORConv2d(nn.Module):
 #         thus when A>0, the net result is negative, and when A<0, the net result is positive
 #     If B is false (i.e. B==0), then XOR(A, B) = A, then if A>0, the net result is positive, and if A<0, the net result is negative
 class XOR2DConvFunction(autograd.Function):
+
     @staticmethod
     def forward(ctx, X, W, B):
+        """
+        for a weight w in {0,1}, we do 1 - 2*w. So T maps to -1, and F maps to 1
+        this mulitply with the element in patch
+        TODO: The primitive form in paper, we know the semantic of sum is counting the number of True, given that weight and input are boolean
+        However, here we have mixed input, X can by Any and W is boolean. The XOR is clearly defined, but the sum we have to speculate to be the normal arithmetic sum. 
+        Athough the type can be Any, the float is at most summed but not mulitplied. 
+        another implication is that given L(A, B) wher A is Some type, and B is boolean, 
+        the result is also Some type. 
+        this raises a new question: whether we should change the activation function: 
+        should we still use strict boolean-output activation?
+        """
+
         ctx.save_for_backward(X, W, B)
         assert B is None, "Bias is not supported yet. It's one boolean value anyway, don't think it is a big deal."
-
-        # To conduct 2DConv, and instead of using multiplication, we use XOR
-        # no need for number of input channels, because the ker and input have same number of channels
-        batch_size, _ , in_height, in_width = X.shape 
-        out_channels, _, kernel_height, kernel_width = W.shape
-
-        # Calculate output dimensions
         padding = 0
         dilation = 1
         stride = 1
         groups = 1
+
+        # no need for number of input channels, because the ker and input have same number of channels
+        batch_size, in_channels , in_height, in_width = X.shape 
+        out_channels, _, kernel_height, kernel_width = W.shape
+
+        # Calculate output dimensions
+
         out_height = (in_height + 2 * padding - dilation * (kernel_height - 1) - 1) // stride + 1
         out_width = (in_width + 2 * padding - dilation * (kernel_width - 1) - 1) // stride + 1
     
@@ -84,34 +99,98 @@ class XOR2DConvFunction(autograd.Function):
         # assuming padding = 0
         input_padded = X
 
-        for b in range(batch_size):
-            for c_out in range(out_channels):
-                for h_out in range(out_height):
-                    for w_out in range(out_width):
-                        h_in = h_out * stride
-                        w_in = w_out * stride
-                        
-                        # Extract the patch from input
-                        patch = input_padded[b, :, h_in:h_in+kernel_height, w_in:w_in+kernel_width]
-                        
-                        # for a weight w in {0,1}, we do 1 - 2*w. So T maps to -1, and F maps to 1
-                        # this mulitply with the element in patch
-                        # TODO: The primitive form in paper, we know the semantic of sum is counting the number of True, given that weight and input are boolean
-                        # However, here we have mixed input, X can by Any and W is boolean. The XOR is clearly defined, but the sum we have to speculate to be the normal arithmetic sum. Athough the type can be Any, the float is at most summed but not mulitplied. 
-                        # another implication is that given L(A, B) wher A is Some type, and B is boolean, the result is also Some type. 
-                        # this raises a new question: whether we should change the activation function: should we still use strict boolean-output activation?
-                        output[b, c_out, h_out, w_out] = torch.sum(patch * (1 - 2 * W[c_out]))
-    
-        S = output
-        return S
+        # extract patches
+        patches = F.unfold(input_padded, kernel_size=kernel_height, stride=stride, padding=padding, dilation=dilation)
+
+        # the weight has shape (out_channels, in_channels, kernel_height, kernel_width)
+        # view the weight that is compatible with the patches
+        w_view = W.view(out_channels, -1)
+        w_view = w_view.unsqueeze(-1)
+
+        # w_view.shape  (out_channels,  in_channels * kernel_height * kernel_width, 1                     )
+        # patches.shape (batch_size,    in_channels * kernel_height * kernel_width, out_height * out_width)
+        # to do operation, need to adjust the dimensions
+        w_view = w_view.unsqueeze(0) # provide the batch dimension to be broadcastable
+        patches = patches.unsqueeze(1) # provide the out_channel dimension to be broadcastable
+
+        # now
+        # w_view.shape  (1,          out_channels, in_channels * kernel_height * kernel_width, 1                     )
+        # patches.shape (batch_size, 1,            in_channels * kernel_height * kernel_width, out_height * out_width)
+        # convRes = w_view * patches # for normal conv
+        convRes = -(2 * w_view - 1) * patches # for XOR conv
+
+        # convRes.shape (batch_size, out_channels, in_channels * kernel_height * kernel_width, out_height * out_width)
+        # sum up
+        preactivation = torch.sum(convRes, dim=2)
+        # reshepe it to be compatible with the output tensor
+        preactivation = preactivation.view(batch_size, out_channels, out_height, out_width)
+
+        return preactivation
 
     @staticmethod
     def backward(ctx, Z):
         G_X, G_W, G_B = backward_real_2DConv(ctx, Z)
         return G_X, G_W, G_B
 
-# Claude provides the template, I modify it to fit the XOR operation
 def backward_real_2DConv(ctx, Z):
+    # Get the saved tensors from the context
+    X, W, B = ctx.saved_tensors
+    
+    # Retrieve stride and padding from context
+    stride = ctx.stride if hasattr(ctx, 'stride') else 1
+    padding = ctx.padding if hasattr(ctx, 'padding') else 0
+    
+    # Get shapes
+    batch_size, in_channels, in_height, in_width = X.shape
+    out_channels, _, kernel_height, kernel_width = W.shape
+    _ , out_channels, out_H, out_W = Z.shape
+    
+    # 1. Compute gradient for bias (already vectorized)
+    grad_B = Z.sum(dim=(0, 2, 3)) if B is not None else None
+    
+    # 2. Compute gradient for weights (grad_W)
+    # Create input patches using unfold
+    X_unfolded = X.unfold(2, kernel_height, stride).unfold(3, kernel_width, stride)
+    # Shape: [batch_size, in_channels, out_height, out_width, kernel_height, kernel_width]
+    # Whatever above is correct
+    
+    # Reshape for batch matrix multiplication
+    X_reshaped = X_unfolded.permute(0, 2, 3, 1, 4, 5).reshape(
+        # after permute
+        # shape [batch_size, out_height, out_width, in_channels, kernel_height, kernel_width]
+        batch_size * Z.shape[2] * Z.shape[3], in_channels, kernel_height * kernel_width
+    )
+    
+    # Reshape Z for batch matrix multiplication
+    Z_reshaped = Z.permute(0, 2, 3, 1).reshape(
+        batch_size * out_H * out_W, out_channels
+    )
+    
+    # Compute grad_W using batch matrix multiplication
+    grad_W = torch.bmm(X_reshaped.transpose(1, 2), Z_reshaped.unsqueeze(-1))
+    grad_W = grad_W.reshape(out_channels, in_channels, kernel_height, kernel_width)
+    
+    # 3. Compute gradient for input (grad_X)
+    # Create output gradient patches
+    Z_padded = torch.nn.functional.pad(Z, (kernel_width-1, kernel_width-1, kernel_height-1, kernel_height-1))
+    Z_unfolded = Z_padded.unfold(2, kernel_height, stride).unfold(3, kernel_width, stride)
+    
+    # Reshape for batch matrix multiplication
+    Z_reshaped = Z_unfolded.permute(0, 2, 3, 1, 4, 5).reshape(
+        batch_size * in_height * in_width, out_channels, kernel_height * kernel_width
+    )
+    
+    # Reshape W for batch matrix multiplication
+    W_reshaped = W.reshape(out_channels, in_channels, kernel_height * kernel_width)
+    
+    # Compute grad_X using batch matrix multiplication
+    grad_X = torch.bmm(Z_reshaped, W_reshaped.transpose(1, 2))
+    grad_X = grad_X.reshape(batch_size, in_channels, in_height, in_width)
+    
+    return grad_X, grad_W, grad_B
+
+# Claude provides the template, I modify it to fit the XOR operation
+def backward_real_2DConv_for_loop(ctx, Z):
     # Get the saved tensors from the context
     X, W, B = ctx.saved_tensors
     
@@ -162,25 +241,8 @@ def backward_real_2DConv(ctx, Z):
                                 
                                 if padding > 0:
                                     raise NotImplementedError("Padding not supported yet")
-                                    if 0 <= h_in < X_padded.shape[2] and 0 <= w_in < X_padded.shape[3]:
-                                        grad_W[c_out, c_in, kh, kw] += X_padded[b, c_in, h_in, w_in] * grad_val
                                 else:
                                     if 0 <= h_in < in_height and 0 <= w_in < in_width:
-                                        # WARNING: here we run into a case that a float-multiplication is inevitable
-                                        # i.e. when X and W are both float. This is especially true when the very first BConv2D layer where X is the image
-
-                                        # USE the following if we know X and grad_val are BOTH FLOAT, this comes from the fact XNOR(x,y) is x * y
-                                        # the specific term is XNOR(Z, d xor(x,w) / dw) = XNOR(Z, -x) = -x * Z 
-                                        # some comments: how many terms eventually aggregated to grad_w[c_out, c_in, kh, kw]? it is Z.shape[2] * Z.shape[3]
-                                        # grad_W[c_out, c_in, kh, kw] += -X[b, c_in, h_in, w_in] * grad_val
-
-                                        # USE the following if we know X is BOOL and the representaiton is F == 0 , T == 1. 
-                                        # the specific term is XNOR(Z, d xor(x,w) / dw) = XNOR(Z, not x)
-                                        # sanity check:
-                                        #   if x --> T, and Z > 0, then the result should be -Z
-                                        #          (1 - 2 * 1) * Z = -Z
-                                        #   if x --> F, and Z > 0, then the result should be Z
-                                        #          (1 - 2 * 0) * Z = Z
                                         grad_W[c_out, c_in, kh, kw] += (1 - 2 * X[b, c_in, h_in, w_in]) * grad_val
 
     # For each example in the batch
@@ -202,33 +264,6 @@ def backward_real_2DConv(ctx, Z):
                         
     return grad_X, grad_W, grad_B
 
-
-class ActvFunctionWithThresh(autograd.Function):
-    @staticmethod
-    def forward(ctx, X, sup):
-        ctx.save_for_backward(X)
-        ctx.sup = sup
-
-        S = torch.ge(X,sup // 2).float()
-        return S
-
-    @staticmethod
-    def backward(ctx, Z):
-        X, = ctx.saved_tensors
-        sup = ctx.sup
-        dist = torch.abs(X - sup // 2)
-        alpha = torch.pi / (2 * (3 * sup) ** 0.5)
-        G_X = 1 - torch.tanh(alpha * dist)**2
-        G_X = Z * G_X        
-        return G_X, None
-        
-class BoolActvWithThresh(nn.Module):
-    def __init__(self, sup):
-        super().__init__()
-        self.sup = sup
-        
-    def forward(self, X) :
-        return ActvFunctionWithThresh.apply(X, self.sup)
 
 def gather_relevant_gradients(Z, batch_idx, c_out, h_in, w_in, KH, KW):
     """
@@ -252,27 +287,41 @@ def gather_relevant_gradients(Z, batch_idx, c_out, h_in, w_in, KH, KW):
             
     return res_idx
 
-def test_forward():
-    # Test the forward pass of the XORConv2d layer
-    # (in_channels, out_channels, kernel_size)
-    xor_conv = XORConv2d(2, 1, 3)
-    print('W:')
+def test_BConv2d():
+    """
+    XORConv2d : (in_channels, out_channels, kernel_size)
+    """
+    xor_conv = XORConv2d(2, 2, 2)
+    print("xor_conv.weight")
     print(xor_conv.weight)
+    print()
 
-    # Create a random input
-    # input = torch.randn(1, 3, 5, 5)
-    input = torch.randint(low=0, high=10, size=(1, 2, 5, 5))
-    print('input')
-    print(input)
-    output = xor_conv(input)
-    print('output')
-    print(output)
+    X = torch.arange(1*2*3*3).reshape(1, 2, 3, 3).float()
+    print("X")
+    print(X)
+    print()
+
+    S = xor_conv(X)
+    print("S")
+    print(S)
+
+    return X, xor_conv.weight, S
+
+def test_fold_unfold():
+    x = torch.arange(32 * 16).reshape(16, 2, 4, 4).float()
+    # print("x")
+    # print(x)
+    print("x.shape")
+    print(x.shape)
+    print()
+    patches = F.unfold(x, kernel_size=3)
+    # print("patches")
+    # print(patches)
+    print("patches.shape")
+    print(patches.shape)
+
 
 # some local test
 if __name__ == "__main__":
     # Test the XORConv2d layer
-    # xor_conv = XORConv2d(3, 4, 3)
-    # print(xor_conv.weight)
-    # print(xor_conv.weight.shape)
-
-    test_forward()
+    X, W, S = test_BConv2d()
