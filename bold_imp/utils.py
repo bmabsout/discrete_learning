@@ -41,11 +41,18 @@ def get_args():
     # Model arguments
     parser.add_argument('--spread', type=int, default=10, metavar='N',
                         help='Spread for the activation function')
-    parser.add_argument('--activate-before-output', action='store_true', default=False,
-                        help='Apply activation function before the output layer')
+    # parser.add_argument('--activate-before-output', action='store_true', default=False,
+    #                     help='Apply activation function before the output layer')
     parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
                         help='List of hidden layer sizes (default: [64])')
-    
+
+    # architecture arguments mutually exclusive
+    architecture_group = parser.add_argument_group('Architecture Selection (choose one)')
+    architecture_group.add_argument('--conv-xnor', action='store_true', default=False,
+                        help='Use convolutional network')
+    architecture_group.add_argument('--xnor', action='store_true', default=False,
+                        help='Use XNOR network')
+
     # Optimizer selection arguments - mutually exclusive
     optimizer_group = parser.add_argument_group('Optimizer Selection (choose one)')
     optimizer_group.add_argument('--use-momentum', action='store_true', default=False,
@@ -117,7 +124,10 @@ def filter_dataset_by_labels(dataset, wanted_labels, debug=False):
     
     return dataset
 
-def get_tensor_stats(tensor, counter=5):
+def get_output_dim(length, padding = 0, dilation = 1, kernel_size = 1, stride = 1):
+    return (length + 2 * padding - dilation * (kernel_size - 1) - 1) // stride + 1
+
+def get_tensor_stats(tensor, counter=0):
     """Compute basic statistics of a tensor.
     
     Args:

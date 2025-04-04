@@ -57,8 +57,9 @@ def get_momentum_accumulator(momentum: float = 0.9, dampening: float = 0.0) -> G
 # Flip deciders
 def get_threshold_decider(thresh: int) -> FlipDecider:
     def threshold_flip_decider(weights: Tensor, accumulated_grad: Tensor) -> Tensor:
-        return (weights == 1) * (accumulated_grad > thresh) + \
+        return (weights == 1.0) * (accumulated_grad > thresh) + \
                (weights == 0) * (accumulated_grad < -thresh)
+            #    (weights == -1.0) * (accumulated_grad < -thresh)
     
     threshold_flip_decider.thresh = thresh  # type: ignore
     return threshold_flip_decider
@@ -69,7 +70,7 @@ def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
         flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, flip_ratio)
         flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, flip_ratio)
         
-        flip_probs = torch.where(weights == 1, flip_prob_weights_1, flip_prob_weights_0)
+        flip_probs = torch.where(weights == 1.0, flip_prob_weights_1, flip_prob_weights_0)
         random_values = torch.rand_like(flip_probs)
         
         return random_values < flip_probs
@@ -95,7 +96,8 @@ class BaseBooleanOptimizer(torch.optim.Optimizer):
         return n
     
     def _flip_weights(self, param: Tensor, weights_to_flip: Tensor):
-        param.data[weights_to_flip] = torch.logical_not(param.data[weights_to_flip]).float()
+        # param.data[weights_to_flip] = 2. * torch.logical_not(param.data[weights_to_flip]).float() - 1.
+        param.data[weights_to_flip] = -param.data[weights_to_flip]
         
         num_flips = weights_to_flip.sum().item()
         self._nb_flips += num_flips

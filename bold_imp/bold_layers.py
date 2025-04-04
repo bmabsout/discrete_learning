@@ -6,6 +6,30 @@ from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
 
+# MARK: normal linear layer with -1 and 1 as weights. No bias
+class XNORLinear(nn.Linear):
+    def __init__(self, in_features, out_features):
+        super().__init__(in_features, out_features, bias=False)
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        # Initialize weights to either -1.0 or 1.0
+        random_values = torch.randint(0, 2, self.weight.shape)
+        self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
+
+# MARK: normal conv2d layer with -1 and 1 as weights. No bias
+class XNORConv2d(nn.Conv2d):
+    def __init__(self, in_channels, out_channels, kernel_size, **kwargs):
+        super().__init__(in_channels, out_channels, kernel_size, **kwargs)
+        # Initialize parameters
+        self.reset_parameters()
+    
+    def reset_parameters(self):
+        # Initialize weights to either -1.0 or 1.0
+        random_values = torch.randint(0, 2, self.weight.shape)
+        self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
+        
+
 class MixtypeXORLinear(nn.Linear):
     """
     Extend the input to be any non-boolean data.
@@ -143,7 +167,7 @@ def backward_real(ctx, Z):
         G_B = Z.sum(dim=0)
 
     # Return
-    return G_X, G_W, G_B
+    return G_X, G_W, None
 
      
 class XORFunction(autograd.Function):
@@ -153,11 +177,11 @@ class XORFunction(autograd.Function):
         ctx.bool_bprop = bool_bprop
 
         # Elementwise XOR logic
+        # S = torch.logical_xor(X[:, None, :], W[None, :, :])
         S = -X[:, None, :] * W[None, :, :]
-        
 
         # Sum over the input dimension
-        S = S.sum(dim=2) + B
+        S = S.sum(dim=2) + B * 0.0
 
         # 0-centered for use with BatchNorm when preferred
         # S = S - W.shape[1] / 2
@@ -171,7 +195,7 @@ class XORFunction(autograd.Function):
         else:
             G_X, G_W, G_B = backward_real(ctx, Z)
 
-        return G_X, G_W, G_B, None
+        return G_X, G_W, None, None
         
 class XORLinear(nn.Linear):
     # bool_bprop dictates how to interpret the gradient. 
@@ -182,9 +206,8 @@ class XORLinear(nn.Linear):
         self.bool_bprop = bool_bprop
   
     def reset_parameters(self):
-        # initialize the weights with either 1.0 or -1.0
-        random_values = torch.randint(0, 2, self.weight.shape)
-        self.weight = nn.Parameter(2 * random_values.float() - 1)
+        # self.weight = nn.Parameter(torch.randint(0, 2, self.weight.shape).float())#
+        self.weight = nn.Parameter(2. * torch.randint(0, 2, self.weight.shape).float() - 1.)#
   
         if self.bias is not None:
             self.bias = nn.Parameter(2 * torch.randint(0, 2, (self.out_features,)).float() - 1)
@@ -200,7 +223,7 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         ctx.sup = sup
         ctx.spread = spread
 
-        S = 2 * torch.ge(X,sup // 2).float() - 1
+        S = 2 * torch.ge(X,sup // 2).float() - 1.
         return S
 
     @staticmethod

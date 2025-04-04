@@ -4,9 +4,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from typing import Any , List , Optional , Callable
-from utils import get_args, filter_dataset_by_labels
+from utils import get_args, filter_dataset_by_labels, get_output_dim
 
-from bold_layers import MixtypeXORLinear, XORLinear, BoolActvWithThreshDiscrete
+from bold_layers import BoolActvWithThreshDiscrete, XNORLinear, XNORConv2d   
 from bold_opt import (
     BaseBooleanOptimizer,
     create_vanilla_optimizer,
@@ -15,36 +15,6 @@ from bold_opt import (
     create_probabilistic_momentum_optimizer
 )
 from bold_loss import XORMismatchLoss, MixtypeXORLoss, IntScalingLoss
-
-class Net(nn.Module):
-    def __init__(self, args):
-        super(Net, self).__init__()
-        # Define layer sizes with input and output dimensions
-        with_input_output = [28*28]+ args.layer_sizes + [len(args.labels)]
-        
-        # Create layers dynamically
-        self.bool_layers = nn.ModuleList()
-        self.actv_layers = nn.ModuleList()
-        
-        # Create all layers
-        for i in range(len(with_input_output) - 1):
-            # Last layer uses bool_bprop=True, others use False
-            bool_bprop = (i == len(with_input_output) - 2)
-            self.bool_layers.append(XORLinear(with_input_output[i], with_input_output[i+1], bool_bprop=bool_bprop))
-            self.actv_layers.append(BoolActvWithThreshDiscrete(with_input_output[i], spread=args.spread))
-
-    def forward(self, x):
-        x = x.reshape(-1, 28*28)
-        
-        # Pass through all layers except the last one
-        for i in range(len(self.bool_layers)):
-            x = self.bool_layers[i](x)
-            # Before the last activation, create a fork for the output
-            if i == len(self.bool_layers) - 1:
-                fork = x.detach()
-            x = self.actv_layers[i](x)
-        
-        return x, fork
 
 class LogitsNet(nn.Module):
     def __init__(self, args):
@@ -58,10 +28,7 @@ class LogitsNet(nn.Module):
         
         # Create all layers except the last one
         for i in range(len(with_input_output) - 1):
-            self.bool_layers.append(XORLinear(with_input_output[i], with_input_output[i+1], bool_bprop=False))
-            # For activation, we use the input size for the spread parameter
-            # self.actv_layers.append(BoolActvWithThreshDiscrete(with_input_output[i], spread=args.spread))
-            # when we use -1 for False, the center become 0
+            self.bool_layers.append(XNORLinear(with_input_output[i], with_input_output[i+1]))
             self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread))
 
     def forward(self, x):
@@ -77,6 +44,50 @@ class LogitsNet(nn.Module):
         
         return x, None
 
+class LogitsConvNet(nn.Module):
+    def __init__(self, args):
+        super(LogitsConvNet, self).__init__()
+        C_out = 36
+        kH = 14
+        kW = 14
+        stride = 4
+        padding = 1
+        dilation = 1
+        gd = get_output_dim
+
+        with_input_output = [28*28]+ args.layer_sizes + [len(args.labels)]
+        # Create layers dynamically
+        self.bool_layers = nn.ModuleList()
+        self.actv_layers = nn.ModuleList()
+        
+        # Create all layers except the last one
+        for i in range(len(with_input_output) - 1):
+            if i == 0:
+                self.bool_layers.append(XNORConv2d(1, C_out, kH, stride=stride, padding=padding, groups=1))
+                # self.bool_layers.append(XNORConv2d(1, C_out, kH, padding='same', padding_mode='replicate'))
+                self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread))
+            else:
+                dim_out = gd(28, padding, dilation, kH, stride)
+                # dim_out = gd(dim_out, kernel_size=2, stride=2)
+                self.bool_layers.append(XNORLinear(dim_out ** 2 * C_out, with_input_output[i+1]))
+                # self.bool_layers.append(XNORLinear(28*28 * C_out, with_input_output[i+1]))
+                self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread)) 
+
+    def forward(self, x):
+        for i in range(len(self.bool_layers) - 1):
+            if i == 0:
+                x = self.bool_layers[i](x)
+                # x = F.max_pool2d(x, 2, stride=2)
+                x = x.view(x.size(0), -1)
+                x = self.actv_layers[i](x)
+            else:
+                x = self.bool_layers[i](x)
+                x = self.actv_layers[i](x)
+        
+        # Last layer (no activation after it)
+        x = self.bool_layers[-1](x)
+        return x, None
+
 def is_loss_gradient_boolean(args):
     assert args.activate_before_output == False, "Has no effect when model applies activation before output. Please double check."
     if args.loss_int_scaling:
@@ -90,6 +101,7 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     model.train()
     total_flips = 0
     criterion = get_criterion(args)
+    accs = []
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
 
@@ -111,6 +123,7 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
         if batch_idx % args.log_interval == 0:
             pred = torch.argmax(output, dim=1)
             train_acc = 100. * pred.eq(target).sum().item() / len(target)
+            accs.append(train_acc / 100.)
             print()
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tAcc: {:.2f}%\tFlips: {}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
@@ -122,8 +135,8 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
             
             if args.dry_run:
                 break
-    
-    print('Total flips in epoch {}: {}'.format(epoch, total_flips))
+    print(f'\nAverage accuracy: {sum(accs) / len(accs):.4f}')
+    print('\nTotal flips in epoch {}: {}'.format(epoch, total_flips))
 
 def test(args, model, device, test_loader):
     model.eval()
@@ -147,24 +160,22 @@ def step_grads_for(opts):
             opt.step()
 
 def get_criterion(args):
-    if args.activate_before_output:
-        print("Model applies activation before output. Overwrite criterion to XORMismatchLoss")
-        return XORMismatchLoss()
+    if args.loss_naive:
+        print("Use MixtypeXORLoss")
+        return MixtypeXORLoss()
+    elif args.loss_int_scaling:
+        print(f"Use IntScalingLoss with alpha={args.loss_int_scaling_alpha}")
+        return IntScalingLoss(alpha=args.loss_int_scaling_alpha)
     else:
-        if args.loss_naive:
-            print("Use MixtypeXORLoss")
-            return MixtypeXORLoss()
-        elif args.loss_int_scaling:
-            print(f"Use IntScalingLoss with alpha={args.loss_int_scaling_alpha}")
-            return IntScalingLoss(alpha=args.loss_int_scaling_alpha)
-        else:
-            raise ValueError("Choose a loss function from --loss-X")
+        raise ValueError("Choose a loss function from --loss-X")
         
 def get_model(args):
-    if args.activate_before_output:
-        return Net(args)
-    else:
+    if args.conv_xnor:
+        return LogitsConvNet(args)
+    elif args.xnor:
         return LogitsNet(args)
+    else:
+        raise ValueError("Choose an architecture from --conv-xnor or --xnor")
 
 def main():
     args = get_args()
@@ -191,10 +202,13 @@ def main():
         train_kwargs.update(cuda_kwargs)
         test_kwargs.update(cuda_kwargs)
 
+    # MARK: Transformation of the input
+    
     transform=transforms.Compose([
         transforms.ToTensor(),
-        transforms.Lambda(lambda x: 2 * torch.gt(x, 0.5).float() - 1)  # Add thresholding to transformation pipeline
+        transforms.Lambda(lambda x: 2. * torch.gt(x, 0.5).float() - 1.)  # Add thresholding to transformation pipeline
         ])
+
     dataset1 = datasets.MNIST('../data', train=True, download=True,
                        transform=transform)
     dataset2 = datasets.MNIST('../data', train=False,

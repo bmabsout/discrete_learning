@@ -9,6 +9,20 @@ from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
 from vgg import VGG
 
+class XNORConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=False):
+        super(XNORConv2d, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, dilation, bias)
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        # initialize the weights with either 1.0 or -1.0 based on threshold at 0
+        random_values = torch.randint(0, 2, self.conv.weight.shape)
+        self.conv.weight = nn.Parameter(2 * random_values.float() - 1)
+
+        if self.conv.bias is not None:
+            self.conv.bias = nn.Parameter(2 * torch.randint(0, 2, (self.conv.out_channels,)).float() - 1)
+
 # Me trying to implement the Conv2d layer with XOR operation as in BOLD
 #
 # The replacement is simple: instead of multiplying the weights with the input, we XOR them
