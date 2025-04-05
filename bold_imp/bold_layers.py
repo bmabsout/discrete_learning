@@ -6,9 +6,11 @@ from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
 
-# MARK: normal linear layer with -1 and 1 as weights. No bias
+################### MARK: normal linear layer with -1 and 1 as weights. No bias ###################
+# equivalent to XNORLinear
+
 class XNORLinear(nn.Linear):
-    def __init__(self, in_features, out_features):
+    def __init__(self, in_features, out_features, bool_bprop: bool = False):
         super().__init__(in_features, out_features, bias=False)
         self.reset_parameters()
         
@@ -17,7 +19,9 @@ class XNORLinear(nn.Linear):
         random_values = torch.randint(0, 2, self.weight.shape)
         self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
 
-# MARK: normal conv2d layer with -1 and 1 as weights. No bias
+################### MARK: normal conv2d layer with -1 and 1 as weights. No bias ###################
+# equivalent to XNORConv2d
+
 class XNORConv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, **kwargs):
         super().__init__(in_channels, out_channels, kernel_size, **kwargs)
@@ -28,76 +32,8 @@ class XNORConv2d(nn.Conv2d):
         # Initialize weights to either -1.0 or 1.0
         random_values = torch.randint(0, 2, self.weight.shape)
         self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
-        
 
-class MixtypeXORLinear(nn.Linear):
-    """
-    Extend the input to be any non-boolean data.
-    This layer assumes the gradient received are non-boolean.
-    The bias is turned off by default.
-    """
-    def __init__(self, in_features : int , out_features : int , bool_bprop : bool = False , ** kwargs ):
-        kwargs['bias'] = kwargs.get('bias', False)
-        super(MixtypeXORLinear, self).__init__(in_features, out_features, **kwargs)
-        if bool_bprop:
-            raise NotImplementedError("Boolean backprop is not implemented for MixtypeXORLinear")
-        self.bool_bprop = bool_bprop
-  
-    def reset_parameters(self):
-        self.weight = nn.Parameter(torch.randint(0, 2, self.weight.shape).float())#
-  
-        if self.bias is not None:
-          self.bias = nn.Parameter(torch.randint(0, 2, (self.out_features,)).float())
-  
-    def forward (self, X) :
-        return MixtypeXORFunction.apply(X, self.weight , self.bias , self.bool_bprop)
-
-class MixtypeXORFunction(autograd.Function):
-    @staticmethod
-    def forward(ctx, X, W, B, bool_bprop: bool):
-        ctx.save_for_backward(X, W, B)
-        ctx.bool_bprop = bool_bprop
-
-        # Elementwise XOR logic
-        # S = torch.logical_xor(X[:, None, :], W[None, :, :])
-        S = (2 * X[:, None, :] - 1) * (1 - 2 * W[None, :, :])
-
-        # Sum over the input dimension
-        S = S.sum(dim=2)
-
-        # 0-centered for use with BatchNorm when preferred
-        # S = S - W.shape[1] / 2
-    
-        return S
-
-    @staticmethod
-    def backward(ctx, Z):
-        assert torch.all(torch.eq(Z, torch.round(Z))), f"Z must contain only integer values, but got {Z}"
-        X, W, B = ctx.saved_tensors
-        assert torch.all(torch.logical_or(X == 0, X == 1)), "X must contain only binary values (0 or 1)"
-
-        """
-        Boolean variation of input processed using torch avoiding loop:
-        -> xor(Z: Real, W: Boolean) = -Z * emb(W)
-        -> emb(W): T->1, F->-1 => emb(W) = 2W - 1
-        => delta(Loss)/delta(X) = Z*(1-2W)
-        """
-        G_X = Z.mm(1 - 2 * W)
-
-        """
-        Boolean variation of weights processed using torch avoiding loop:
-        -> xor(Z: Real, X: Real) = -Z * X
-        => delta(Loss)/delta(W) = ??
-        """
-        G_W = Z.t().mm(1 - 2 * X)
-
-        """ Boolean variation of bias """
-        if B is not None:
-            G_B = Z.sum(dim=0)
-
-        return G_X, G_W, None, None
-
-
+################### MARK: XORLinear ###################
 
 def backward_bool(ctx, Z):
     # Assert that Z only contains binary values (0 or 1)
@@ -216,6 +152,150 @@ class XORLinear(nn.Linear):
     def forward (self, X) :
         return XORFunction.apply(X, self.weight , self.bias , self.bool_bprop)
 
+
+
+
+################### MARK: XNORLinear with explicit implementation ###################
+
+class XNORFunctionManual(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, W, B, bool_bprop: bool):
+        ctx.save_for_backward(X, W, B)
+        ctx.bool_bprop = bool_bprop
+
+        S = X[:, None, :] * W[None, :, :] 
+        S = S.sum(dim=2)
+        return S
+
+    @staticmethod
+    def backward(ctx, Z):
+        if ctx.bool_bprop:
+            raise NotImplementedError("Boolean backprop is not implemented for XNORLinear")
+
+        assert torch.all(torch.eq(Z, torch.round(Z))), f"Z must contain only integer values, but got {Z}"
+        X, W, _ = ctx.saved_tensors
+
+        G_X = Z.mm(W)
+        G_W = Z.t().mm(X)
+
+        return G_X, G_W, None, None
+        
+class XNORLinearManual(nn.Linear):
+    def __init__(self, in_features : int , out_features : int , bool_bprop : bool = False , ** kwargs ):
+        super(XNORLinearManual, self).__init__(in_features ,out_features , ** kwargs )
+        self.bool_bprop = bool_bprop
+  
+    def reset_parameters(self):
+        # initialize the weights with either 1.0 or -1.0
+        random_values = torch.randint(0, 2, self.weight.shape)
+        self.weight = nn.Parameter(2 * random_values.float() - 1)
+  
+        if self.bias is not None:
+            self.bias = nn.Parameter(2 * torch.randint(0, 2, (self.out_features,)).float() - 1)
+  
+    def forward (self, X) :
+        return XNORFunctionManual.apply(X, self.weight , self.bias , self.bool_bprop)
+
+
+################### MARK: ANDLinear ###################
+
+# not working, might be some bug in the implementation?
+
+class ANDFunction(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, W, B, bool_bprop: bool):
+        ctx.save_for_backward(X, W, B)
+        ctx.bool_bprop = bool_bprop
+
+        # Element-wise multiplication with sign handling
+        abs_X = torch.abs(X)
+        abs_W = torch.abs(W)
+        sign_X = torch.sign(X)
+        sign_W = torch.sign(W)
+        
+        # Compute the sign of the product: positive if both are positive, negative otherwise
+        # Use broadcasting correctly by expanding dimensions
+        product_sign = torch.where((sign_X[:, None, :] > 0) & (sign_W[None, :, :] > 0), 
+                                 torch.ones_like(abs_X[:, None, :]), 
+                                 -torch.ones_like(abs_X[:, None, :]))
+        
+        # Apply broadcasting and compute the result
+        S = (abs_X[:, None, :] * abs_W[None, :, :]) * product_sign
+
+        S = S.sum(dim=2)
+        return S
+
+    @staticmethod
+    def backward(ctx, Z):
+        if ctx.bool_bprop:
+            raise NotImplementedError("Boolean backprop is not implemented for XNORLinear")
+
+        assert torch.all(torch.eq(Z, torch.round(Z))), f"Z must contain only integer values, but got {Z}"
+        X, W, _ = ctx.saved_tensors
+
+        # Generate W_eff: maps to 1.0 if w==1.0, maps to 0.0 if w==-1.0
+        # W_eff = (W + 1) / 2  # Convert from [-1, 1] to [0, 1]
+        # G_X = Z.mm(W_eff)
+        # G_W = Z.t().mm(X)
+
+        W_eff = torch.where((W >= 0) | ((W < 0) & (X[:, None, :] < 0)), 
+                           torch.ones_like(W), 
+                           -torch.ones_like(W))
+        
+        # G_X = Z.mm(W_eff)
+        G_X = Z[:, :, None] * W_eff
+        G_X = G_X.sum(dim=1)
+
+        # print("X.shape: ", X.shape)
+        # print("W.shape: ", W.shape)
+        # X.shape:  torch.Size([256, 128])
+        # W.shape:  torch.Size([10, 128])
+        X_eff = torch.where((X[:, None, :] >= 0) | ((X[:, None, :] < 0) & (W[None, :, :] < 0)),     
+                           torch.ones_like(X[:, None, :]), 
+                           -torch.ones_like(X[:, None, :]))
+        # print("X_eff.shape: ", X_eff.shape)
+        # print("Z.shape: ", Z.shape)
+        G_W = Z[:, :, None] * X_eff
+        G_W = G_W.sum(dim=0)
+
+        # G_W = Z.t().mm(X_eff)
+
+        return G_X, G_W, None, None
+        
+class ANDLinear(nn.Linear):
+    def __init__(self, in_features : int , out_features : int , bool_bprop : bool = False , ** kwargs ):
+        super(ANDLinear, self).__init__(in_features ,out_features , ** kwargs )
+        self.bool_bprop = bool_bprop
+  
+    def reset_parameters(self):
+        # initialize the weights with either 1.0 or -1.0
+        random_values = torch.randint(0, 2, self.weight.shape)
+        self.weight = nn.Parameter(2 * random_values.float() - 1)
+  
+        if self.bias is not None:
+            self.bias = nn.Parameter(2 * torch.randint(0, 2, (self.out_features,)).float() - 1)
+  
+    def forward (self, X) :
+        return ANDFunction.apply(X, self.weight , self.bias , self.bool_bprop)
+
+def test_ANDLinear():
+    # it seems correct
+    layer = ANDLinear(3, 2, bool_bprop=False)
+    print("W: \n", layer.weight)
+    x = (2 * torch.randint(0, 2, (4, 3)).float() - 1)
+    x.requires_grad_(True)  # Enable gradient tracking
+    print("X: \n", x)
+    output = layer(x)
+    print("output: \n", output)
+    output = output.sum()
+    output.backward()
+    print("output: ", output)
+    print("X.grad: \n", x.grad)
+    print("param grads: \n", layer.weight.grad)
+
+
+################### MARK: BoolActvWithThreshDiscrete ###################
+
 class ActvFunctionWithThreshDiscrete(autograd.Function):
     @staticmethod
     def forward(ctx, X, sup, spread):
@@ -250,6 +330,8 @@ class BoolActvWithThreshDiscrete(nn.Module):
         return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread)
 
 
+################### MARK: BoolActv ###################
+
 class ActvFunction(autograd.Function):
     @staticmethod
     def forward(ctx, X):
@@ -281,6 +363,8 @@ class BoolActv(nn.Module):
         return ActvFunction.apply(X)
 
 
+################### MARK: Test ###################
+
 def test_mixtype_xor_linear():
     layer = MixtypeXORLinear(10, 5)
     x = torch.randint(0, 2, (32, 10)).float()
@@ -292,5 +376,5 @@ def test_mixtype_xor_linear():
     print("param grads: ", layer.weight.grad)
 
 if __name__ == "__main__":
-    test_mixtype_xor_linear()
+    test_ANDLinear()
 

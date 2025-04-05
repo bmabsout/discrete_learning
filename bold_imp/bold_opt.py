@@ -96,7 +96,6 @@ class BaseBooleanOptimizer(torch.optim.Optimizer):
         return n
     
     def _flip_weights(self, param: Tensor, weights_to_flip: Tensor):
-        # param.data[weights_to_flip] = 2. * torch.logical_not(param.data[weights_to_flip]).float() - 1.
         param.data[weights_to_flip] = -param.data[weights_to_flip]
         
         num_flips = weights_to_flip.sum().item()

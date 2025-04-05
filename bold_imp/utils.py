@@ -46,6 +46,11 @@ def get_args():
     parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
                         help='List of hidden layer sizes (default: [64])')
 
+    # Input transformation arguments
+    transform_group = parser.add_argument_group('Input Transformation Options')
+    transform_group.add_argument('--integer-input', action='store_true', default=False,
+                        help='Use integer input transformation (centered around zero)')
+
     # architecture arguments mutually exclusive
     architecture_group = parser.add_argument_group('Architecture Selection (choose one)')
     architecture_group.add_argument('--conv-xnor', action='store_true', default=False,

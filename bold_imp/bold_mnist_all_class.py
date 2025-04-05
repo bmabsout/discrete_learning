@@ -6,7 +6,10 @@ from torchvision import datasets, transforms
 from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels, get_output_dim
 
-from bold_layers import BoolActvWithThreshDiscrete, XNORLinear, XNORConv2d   
+# Set print options to show full tensor contents
+torch.set_printoptions(profile="full")
+
+from bold_layers import BoolActvWithThreshDiscrete, XNORLinear, XNORConv2d, ANDLinear, XORLinear, XNORLinearManual
 from bold_opt import (
     BaseBooleanOptimizer,
     create_vanilla_optimizer,
@@ -14,7 +17,7 @@ from bold_opt import (
     create_probabilistic_optimizer,
     create_probabilistic_momentum_optimizer
 )
-from bold_loss import XORMismatchLoss, MixtypeXORLoss, IntScalingLoss
+from bold_loss import XORMismatchLoss, IntScalingLoss, MixtypeXORLoss
 
 class LogitsNet(nn.Module):
     def __init__(self, args):
@@ -28,8 +31,9 @@ class LogitsNet(nn.Module):
         
         # Create all layers except the last one
         for i in range(len(with_input_output) - 1):
-            self.bool_layers.append(XNORLinear(with_input_output[i], with_input_output[i+1]))
+            self.bool_layers.append(XNORLinear(with_input_output[i], with_input_output[i+1], bool_bprop=False))
             self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread))
+            # self.actv_layers.append(nn.ReLU())
 
     def forward(self, x):
         x = x.reshape(-1, 28*28)
@@ -69,7 +73,7 @@ class LogitsConvNet(nn.Module):
             else:
                 dim_out = gd(28, padding, dilation, kH, stride)
                 # dim_out = gd(dim_out, kernel_size=2, stride=2)
-                self.bool_layers.append(XNORLinear(dim_out ** 2 * C_out, with_input_output[i+1]))
+                self.bool_layers.append(XNORLinear(dim_out ** 2 * C_out, with_input_output[i+1], bool_bprop=False))
                 # self.bool_layers.append(XNORLinear(28*28 * C_out, with_input_output[i+1]))
                 self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread)) 
 
@@ -177,6 +181,20 @@ def get_model(args):
     else:
         raise ValueError("Choose an architecture from --conv-xnor or --xnor")
 
+def get_transform(args):
+    if args.integer_input:
+        return transforms.Compose([
+            transforms.ToTensor(),  # This handles the (C,H,W) conversion
+            transforms.Lambda(lambda x: x * 255),  # Convert to [0,255]
+            transforms.Lambda(lambda x: x - 127.5),  # Center around zero: [-127.5, 127.5]
+            transforms.Lambda(lambda x: torch.floor(x))  # Floor to get integer values: [-127, 127]
+        ])
+    else:
+        return transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: 2. * torch.gt(x, 0.5).float() - 1.)  # Add thresholding to transformation pipeline
+        ])
+
 def main():
     args = get_args()
     if args.all_labels:
@@ -203,12 +221,8 @@ def main():
         test_kwargs.update(cuda_kwargs)
 
     # MARK: Transformation of the input
-    
-    transform=transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Lambda(lambda x: 2. * torch.gt(x, 0.5).float() - 1.)  # Add thresholding to transformation pipeline
-        ])
 
+    transform = get_transform(args)
     dataset1 = datasets.MNIST('../data', train=True, download=True,
                        transform=transform)
     dataset2 = datasets.MNIST('../data', train=False,
