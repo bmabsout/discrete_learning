@@ -183,10 +183,12 @@ def get_model(args):
 
 def get_transform(args):
     if args.integer_input:
+        steps = 255
+        print(f"Using integer input transformation with {steps} steps")
         return transforms.Compose([
             transforms.ToTensor(),  # This handles the (C,H,W) conversion
-            transforms.Lambda(lambda x: x * 255),  # Convert to [0,255]
-            transforms.Lambda(lambda x: x - 127.5),  # Center around zero: [-127.5, 127.5]
+            transforms.Lambda(lambda x: x * steps),  # Convert to [0,255]
+            transforms.Lambda(lambda x: x - steps / 2),  # Center around zero: [-127.5, 127.5]
             transforms.Lambda(lambda x: torch.floor(x))  # Floor to get integer values: [-127, 127]
         ])
     else:
