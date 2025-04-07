@@ -116,8 +116,13 @@ class LogitsConvNet_v2(nn.Module):
         self.bool_layers = nn.ModuleList()
         self.spread = args.spread
 
-        c_in = 1
-        H = W = 28
+        if args.all_labels_cifar:
+            c_in = 3
+            H = W = 32
+        else:
+            c_in = 1
+            H = W = 28
+            
         dim_in = None
         layers = parse_arch(args.arch)
         self.last_conv_layer_index = None
@@ -320,15 +325,21 @@ def main():
         train_kwargs.update(cuda_kwargs)
         test_kwargs.update(cuda_kwargs)
 
-    # MARK: Transformation of the input
-
     transform = get_transform(args)
-    dataset1 = datasets.MNIST('../data', train=True, download=True,
+
+    if args.all_labels_cifar:
+        dataset1 = datasets.CIFAR10('../data', train=True, download=True,
                        transform=transform)
-    dataset2 = datasets.MNIST('../data', train=False,
+        dataset2 = datasets.CIFAR10('../data', train=False,
                        transform=transform)
-    dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
-    dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
+    else:
+        dataset1 = datasets.MNIST('../data', train=True, download=True,
+                        transform=transform)
+        dataset2 = datasets.MNIST('../data', train=False,
+                        transform=transform)
+        dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
+        dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
+
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 

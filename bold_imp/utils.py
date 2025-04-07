@@ -37,6 +37,8 @@ def get_args():
                         help='list of labels to use (default: 1 0)')
     parser.add_argument('--all-labels', action='store_true', default=False,
                         help='Use all labels instead of binary classification')
+    parser.add_argument('--all-labels-cifar', action='store_true', default=False,
+                        help='Use all labels instead of binary classification for CIFAR')
     
     # Model arguments
     parser.add_argument('--spread', type=int, default=10, metavar='N',
