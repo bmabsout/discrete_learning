@@ -115,14 +115,14 @@ class LogitsConvNet_v2(nn.Module):
         super(LogitsConvNet_v2, self).__init__()
         self.bool_layers = nn.ModuleList()
         self.spread = args.spread
-
+        self.use_relu = args.use_relu
         if args.all_labels_cifar:
             c_in = 3
             H = W = 32
         else:
             c_in = 1
             H = W = 28
-            
+
         dim_in = None
         layers = parse_arch(args.arch)
         self.last_conv_layer_index = None
@@ -145,7 +145,10 @@ class LogitsConvNet_v2(nn.Module):
             if i == self.last_conv_layer_index:
                 x = x.view(x.size(0), -1)
             x = self.bool_layers[i](x)
-            x = BoolActvWithThreshDiscrete(0, spread=self.spread)(x)
+            if not self.use_relu:
+                x = BoolActvWithThreshDiscrete(0, spread=self.spread)(x)
+            else:
+                x = F.relu(x)
         x = self.bool_layers[-1](x)
         return x, None
 

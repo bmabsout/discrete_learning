@@ -43,6 +43,8 @@ def get_args():
     # Model arguments
     parser.add_argument('--spread', type=int, default=10, metavar='N',
                         help='Spread for the activation function')
+    parser.add_argument('--use-relu', action='store_true', default=False,
+                        help='Use ReLU activation instead of boolean activation')
     # parser.add_argument('--activate-before-output', action='store_true', default=False,
     #                     help='Apply activation function before the output layer')
     parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
