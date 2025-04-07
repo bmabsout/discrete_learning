@@ -48,14 +48,110 @@ class LogitsNet(nn.Module):
         
         return x, None
 
+def parse_arch(arch):
+    """Parse architecture string into a list of layer specifications.
+
+    Format: 'conv-CxKxK-S-P,conv-CxKxK-S-P,linear-N'
+    
+    Where:
+    - conv/linear specifies the layer type
+    - C is number of output channels (for conv)
+    - K is kernel size (for conv)
+    - S is stride (for conv)
+    - P is padding (for conv) 
+    - N is output size (for linear)
+    
+    Example: 'conv-36x14x14-1-0,conv-36x14x14-1-0,linear-100,linear-10'
+    """
+    if not arch:
+        return []
+        
+    layers = []
+    for layer_spec in arch.split(','):
+        parts = layer_spec.split('-')
+        layer_type = parts[0]
+        
+        if layer_type == 'conv':
+            # Parse conv layer: CxKxK-S-P
+            channels, *kernel = parts[1].split('x')
+            stride = int(parts[2])
+            padding = int(parts[3])
+            
+            layers.append({
+                'type': 'conv',
+                'out_channels': int(channels),
+                'kernel_size': (int(kernel[0]), int(kernel[1])),
+                'stride': stride,
+                'padding': padding
+            })
+            
+        elif layer_type == 'linear':
+            # Parse linear layer: N
+            out_features = int(parts[1])
+            layers.append({
+                'type': 'linear',
+                'out_features': out_features
+            })
+            
+    return layers
+
+def build_conv_layer(layer_spec, c_in, H, W):
+    assert layer_spec['type'] == 'conv'
+    # unpack
+    c_out = layer_spec['out_channels']
+    kH = layer_spec['kernel_size'][0]
+    kW = layer_spec['kernel_size'][1]
+    stride = layer_spec['stride']
+    padding = layer_spec['padding']
+    return XNORConv2d(c_in, c_out, (kH, kW), stride=stride, padding=padding, groups=1), get_output_dim(H, padding, 1, kH, stride)
+
+def build_linear_layer(layer_spec, dim_in):
+    assert layer_spec['type'] == 'linear'
+    dim_out = layer_spec['out_features']
+    return XNORLinear(dim_in, dim_out, bool_bprop=False), dim_out
+
+class LogitsConvNet_v2(nn.Module):
+    def __init__(self, args):
+        super(LogitsConvNet_v2, self).__init__()
+        self.bool_layers = nn.ModuleList()
+        self.spread = args.spread
+
+        c_in = 1
+        H = W = 28
+        dim_in = None
+        layers = parse_arch(args.arch)
+        self.last_conv_layer_index = None
+        for i, layer_spec in enumerate(layers):
+            if layer_spec['type'] == 'conv':
+                layer, output_dim = build_conv_layer(layer_spec, c_in, H, W)
+                c_in = layer.out_channels
+                H, W = output_dim, output_dim
+                self.bool_layers.append(layer)
+            elif layer_spec['type'] == 'linear':
+                if self.last_conv_layer_index is None:
+                    self.last_conv_layer_index = i
+                    dim_in = H * W * c_in
+                layer, output_dim = build_linear_layer(layer_spec, dim_in)
+                dim_in = output_dim
+                self.bool_layers.append(layer)
+
+    def forward(self, x):
+        for i in range(len(self.bool_layers) - 1):
+            if i == self.last_conv_layer_index:
+                x = x.view(x.size(0), -1)
+            x = self.bool_layers[i](x)
+            x = BoolActvWithThreshDiscrete(0, spread=self.spread)(x)
+        x = self.bool_layers[-1](x)
+        return x, None
+
 class LogitsConvNet(nn.Module):
     def __init__(self, args):
         super(LogitsConvNet, self).__init__()
         C_out = 36
         kH = 14
         kW = 14
-        stride = 4
-        padding = 1
+        stride = 1
+        padding = 0
         dilation = 1
         gd = get_output_dim
 
@@ -176,6 +272,8 @@ def get_criterion(args):
 def get_model(args):
     if args.conv_xnor:
         return LogitsConvNet(args)
+    elif args.conv_xnor_v2:
+        return LogitsConvNet_v2(args)
     elif args.xnor:
         return LogitsNet(args)
     else:
@@ -183,7 +281,7 @@ def get_model(args):
 
 def get_transform(args):
     if args.integer_input:
-        steps = 255
+        steps = args.integer_input_steps
         print(f"Using integer input transformation with {steps} steps")
         return transforms.Compose([
             transforms.ToTensor(),  # This handles the (C,H,W) conversion

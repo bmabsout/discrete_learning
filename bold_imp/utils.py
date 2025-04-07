@@ -50,13 +50,19 @@ def get_args():
     transform_group = parser.add_argument_group('Input Transformation Options')
     transform_group.add_argument('--integer-input', action='store_true', default=False,
                         help='Use integer input transformation (centered around zero)')
+    transform_group.add_argument('--integer-input-steps', type=int, default=255,
+                        help='Number of steps for integer input transformation (default: 255)')
 
     # architecture arguments mutually exclusive
     architecture_group = parser.add_argument_group('Architecture Selection (choose one)')
     architecture_group.add_argument('--conv-xnor', action='store_true', default=False,
                         help='Use convolutional network')
+    architecture_group.add_argument('--conv-xnor-v2', action='store_true', default=False,
+                        help='Use convolutional network v2')
     architecture_group.add_argument('--xnor', action='store_true', default=False,
                         help='Use XNOR network')
+    architecture_group.add_argument('--arch', type=str, default='',
+                        help='Architecture specification for conv-xnor-v2')
 
     # Optimizer selection arguments - mutually exclusive
     optimizer_group = parser.add_argument_group('Optimizer Selection (choose one)')
@@ -161,5 +167,6 @@ def get_tensor_stats(tensor, counter=0):
 
 if __name__ == "__main__":
     args = get_args()
-    print(args.labels)
+    # print(args.labels)
+ 
 
