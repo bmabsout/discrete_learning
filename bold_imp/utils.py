@@ -56,6 +56,10 @@ def get_args():
                         help='Use integer input transformation (centered around zero)')
     transform_group.add_argument('--integer-input-steps', type=int, default=255,
                         help='Number of steps for integer input transformation (default: 255)')
+    transform_group.add_argument('--input-grayscale', action='store_true', default=False,
+                        help='Use grayscale input transformation')
+    transform_group.add_argument('--input-grayscale-steps', type=int, default=255,
+                        help='Number of steps for grayscale input transformation (default: 255)')
 
     # architecture arguments mutually exclusive
     architecture_group = parser.add_argument_group('Architecture Selection (choose one)')

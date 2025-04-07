@@ -117,7 +117,7 @@ class LogitsConvNet_v2(nn.Module):
         self.spread = args.spread
         self.use_relu = args.use_relu
         if args.all_labels_cifar:
-            c_in = 3
+            c_in = 1 if args.input_grayscale else 3
             H = W = 32
         else:
             c_in = 1
@@ -293,6 +293,16 @@ def get_transform(args):
         print(f"Using integer input transformation with {steps} steps")
         return transforms.Compose([
             transforms.ToTensor(),  # This handles the (C,H,W) conversion
+            transforms.Lambda(lambda x: x * steps),  # Convert to [0,255]
+            transforms.Lambda(lambda x: x - steps / 2),  # Center around zero: [-127.5, 127.5]
+            transforms.Lambda(lambda x: torch.floor(x))  # Floor to get integer values: [-127, 127]
+        ])
+    elif args.input_grayscale:
+        steps = args.input_grayscale_steps
+        print(f"Using grayscale input transformation with {steps} steps")
+        return transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.ToTensor(),
             transforms.Lambda(lambda x: x * steps),  # Convert to [0,255]
             transforms.Lambda(lambda x: x - steps / 2),  # Center around zero: [-127.5, 127.5]
             transforms.Lambda(lambda x: torch.floor(x))  # Floor to get integer values: [-127, 127]
