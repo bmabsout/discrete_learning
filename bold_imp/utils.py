@@ -62,6 +62,8 @@ def get_args():
                         help='Use grayscale input transformation')
     transform_group.add_argument('--input-grayscale-steps', type=int, default=255,
                         help='Number of steps for grayscale input transformation (default: 255)')
+    transform_group.add_argument('--input-augmentation', action='store_true', default=False,
+                        help='Use input augmentation')
 
     # architecture arguments mutually exclusive
     architecture_group = parser.add_argument_group('Architecture Selection (choose one)')

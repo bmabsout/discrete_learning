@@ -372,9 +372,24 @@ def get_model(args):
         raise ValueError("Choose an architecture from --conv-xnor or --xnor")
 
 def get_transform(args):
-    if args.integer_input:
+    if args.integer_input and args.dataset == 'cifar10' and args.input_augmentation:
         steps = args.integer_input_steps
-        print(f"Using integer input transformation with {steps} steps")
+        print(f"Augmented; Integer input transformation with {steps} steps")
+        mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261]
+        return transforms.Compose([
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomRotation(20),
+            transforms.ColorJitter(brightness = 0.1,contrast = 0.1,saturation = 0.1),
+            transforms.RandomAdjustSharpness(sharpness_factor = 2,p = 0.2),
+            transforms.ToTensor() ,
+            transforms.Lambda(lambda x: x * steps),  # Convert to [0,255]
+            transforms.Lambda(lambda x: x - steps / 2),  # Center around zero: [-127.5, 127.5]
+            transforms.Lambda(lambda x: torch.floor(x)),  # Floor to get integer values: [-127, 127]
+            transforms.RandomErasing(p=0.75,scale=(0.02, 0.1),value=0.0, inplace=False),
+        ])
+    elif args.integer_input:
+        steps = args.integer_input_steps
+        print(f"Integer input transformation with {steps} steps")
         return transforms.Compose([
             transforms.ToTensor(),  # This handles the (C,H,W) conversion
             transforms.Lambda(lambda x: x * steps),  # Convert to [0,255]
