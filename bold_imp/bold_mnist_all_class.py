@@ -152,7 +152,7 @@ class LogitsConvNet_v2(nn.Module):
         self.activation_layers = nn.ModuleList()  # New module list for activation layers
         self.spread = args.spread
         self.use_relu = args.use_relu
-        if args.all_labels_cifar:
+        if args.dataset == 'cifar10':
             c_in = 1 if args.input_grayscale else 3
             H = W = 32
         else:

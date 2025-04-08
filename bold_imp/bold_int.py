@@ -101,7 +101,22 @@ def parse_arch(arch):
                 'type': 'activation',
                 'activation_type': activation_type
             })
-            
+        elif layer_type == 'pool':
+            # Parse pooling layer: type-KxK-S-P
+            # Example: pool-max-2x2-2-0 or pool-avg-3x3-1-1
+            pool_type = parts[1]
+            kernel = [int(x) for x in parts[2].split('x')]
+            stride = int(parts[3])
+            padding = int(parts[4])
+            layers.append({
+                'type': 'pool',
+                'pool_type': pool_type,
+                'kernel_size': (kernel[0], kernel[1]),
+                'stride': stride,
+                'padding': padding
+            })
+        else:
+            raise ValueError(f"Unsupported layer type: {layer_type}")
     return layers
 
 def build_conv_layer(layer_spec, c_in, H, W):
@@ -144,6 +159,34 @@ def build_activation_layer(layer_spec, args):
         return BoolActvWithThreshDiscrete(0, spread=args.spread)
     else:
         raise ValueError(f"Unsupported activation type: {activation_type}")
+    
+def build_pool_layer(layer_spec, c_in, H, W):
+    """Build a pooling layer based on the specification.
+    
+    Args:
+        layer_spec: Dictionary containing layer specifications
+        c_in: Number of input channels
+        H: Input height
+        W: Input width
+        
+    Returns:
+        Tuple of (pooling layer, output dimension)
+    """
+    assert layer_spec['type'] == 'pool'
+    pool_type = layer_spec['pool_type'].lower()
+    kernel_size = layer_spec['kernel_size']
+    stride = layer_spec['stride'] 
+    padding = layer_spec['padding']
+
+    if pool_type == 'max':
+        layer = nn.MaxPool2d(kernel_size, stride=stride, padding=padding)
+    elif pool_type == 'avg':
+        layer = nn.AvgPool2d(kernel_size, stride=stride, padding=padding)
+    else:
+        raise ValueError(f"Unsupported pooling type: {pool_type}")
+
+    output_dim = get_output_dim(H, padding, 1, kernel_size[0], stride)
+    return layer, output_dim
 
 class LogitsConvNet_v2(nn.Module):
     def __init__(self, args):
@@ -177,6 +220,14 @@ class LogitsConvNet_v2(nn.Module):
             elif layer_spec['type'] == 'activation':
                 activation_layer = build_activation_layer(layer_spec, args)
                 self.bool_layers.append(activation_layer)
+            elif layer_spec['type'] == 'pool':
+                layer, output_dim = build_pool_layer(layer_spec, c_in, H, W)
+                c_in = c_in # pooling layer does not change the number of channels
+                H, W = output_dim, output_dim
+                self.bool_layers.append(layer)
+
+            else:
+                raise ValueError(f"Unsupported layer type: {layer_spec['type']}")
 
     def forward(self, x):
         for i in range(len(self.bool_layers)):

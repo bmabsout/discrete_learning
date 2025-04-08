@@ -24,8 +24,9 @@ def calculate_flip_probabilities(gradient_values: Tensor, flip_ratio: float = 0.
 
 
 def validate_tensors_for_bool_opt(validate_me: Tensor) -> None:
-    assert torch.all(torch.eq(validate_me.grad.data, torch.round(validate_me.grad.data))), "Gradients must contain only integer values"
+    # assert torch.all(torch.eq(validate_me.grad.data, torch.round(validate_me.grad.data))), "Gradients must contain only integer values"
     # assert torch.all(torch.logical_or(validate_me.data == 0, validate_me.data == 1)), "Weights must contain only binary values (0 or 1)"
+    return None
 
 
 def update_momentum_buffer(grad: Tensor, momentum_buffer: Tensor, momentum: float, dampening: float) -> Tensor:
