@@ -19,34 +19,6 @@ from bold_opt import (
 )
 from bold_loss import XORMismatchLoss, IntScalingLoss, MixtypeXORLoss
 
-class LogitsNet(nn.Module):
-    def __init__(self, args):
-        super(LogitsNet, self).__init__()
-        # Define layer sizes with input and output dimensions
-
-        with_input_output = [28*28]+ args.layer_sizes + [len(args.labels)]
-        # Create layers dynamically
-        self.bool_layers = nn.ModuleList()
-        self.actv_layers = nn.ModuleList()
-        
-        # Create all layers except the last one
-        for i in range(len(with_input_output) - 1):
-            self.bool_layers.append(XNORLinear(with_input_output[i], with_input_output[i+1], bool_bprop=False))
-            self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread))
-            # self.actv_layers.append(nn.ReLU())
-
-    def forward(self, x):
-        x = x.reshape(-1, 28*28)
-        
-        # Pass through all layers except the last one
-        for i in range(len(self.bool_layers) - 1):
-            x = self.bool_layers[i](x)
-            x = self.actv_layers[i](x)
-        
-        # Last layer (no activation after it)
-        x = self.bool_layers[-1](x)
-        
-        return x, None
 
 def parse_arch(arch):
     """Parse architecture string into a list of layer specifications.
@@ -236,55 +208,14 @@ class LogitsConvNet_v2(nn.Module):
             x = self.bool_layers[i](x)
         return x, None
 
-class LogitsConvNet(nn.Module):
-    def __init__(self, args):
-        super(LogitsConvNet, self).__init__()
-        C_out = 36
-        kH = 14
-        kW = 14
-        stride = 1
-        padding = 0
-        dilation = 1
-        gd = get_output_dim
-
-        with_input_output = [28*28]+ args.layer_sizes + [len(args.labels)]
-        # Create layers dynamically
-        self.bool_layers = nn.ModuleList()
-        self.actv_layers = nn.ModuleList()
-        
-        # Create all layers except the last one
-        for i in range(len(with_input_output) - 1):
-            if i == 0:
-                self.bool_layers.append(XNORConv2d(1, C_out, kH, stride=stride, padding=padding, groups=1))
-                # self.bool_layers.append(XNORConv2d(1, C_out, kH, padding='same', padding_mode='replicate'))
-                self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread))
-            else:
-                dim_out = gd(28, padding, dilation, kH, stride)
-                # dim_out = gd(dim_out, kernel_size=2, stride=2)
-                self.bool_layers.append(XNORLinear(dim_out ** 2 * C_out, with_input_output[i+1], bool_bprop=False))
-                # self.bool_layers.append(XNORLinear(28*28 * C_out, with_input_output[i+1]))
-                self.actv_layers.append(BoolActvWithThreshDiscrete(0, spread=args.spread)) 
-
-    def forward(self, x):
-        for i in range(len(self.bool_layers) - 1):
-            if i == 0:
-                x = self.bool_layers[i](x)
-                # x = F.max_pool2d(x, 2, stride=2)
-                x = x.view(x.size(0), -1)
-                x = self.actv_layers[i](x)
-            else:
-                x = self.bool_layers[i](x)
-                x = self.actv_layers[i](x)
-        
-        # Last layer (no activation after it)
-        x = self.bool_layers[-1](x)
-        return x, None
 
 def is_loss_gradient_boolean(args):
     assert args.activate_before_output == False, "Has no effect when model applies activation before output. Please double check."
     if args.loss_int_scaling:
         return False
     elif args.loss_naive:
+        return False
+    elif args.loss_cross_entropy:
         return False
     else:
         raise ValueError("Choose a loss function from --loss-X")
@@ -358,6 +289,9 @@ def get_criterion(args):
     elif args.loss_int_scaling:
         print(f"Use IntScalingLoss with alpha={args.loss_int_scaling_alpha}")
         return IntScalingLoss(alpha=args.loss_int_scaling_alpha)
+    elif args.loss_cross_entropy:
+        print("Use CrossEntropyLoss")
+        return F.nll_loss
     else:
         raise ValueError("Choose a loss function from --loss-X")
         

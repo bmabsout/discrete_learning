@@ -101,6 +101,8 @@ def get_args():
                         help='Use naive XOR mismatch loss')
     loss_group.add_argument('--loss-int-scaling', action='store_true', default=False,
                         help='Use integer scaling loss')
+    loss_group.add_argument('--loss-cross-entropy', action='store_true', default=False,
+                        help='Use cross entropy loss')
     parser.add_argument('--loss-int-scaling-alpha', type=int, default=1000, metavar='N',
                         help='Alpha for integer scaling loss')
     return parser.parse_args()
