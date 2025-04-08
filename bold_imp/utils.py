@@ -33,20 +33,22 @@ def get_args():
                              'For probabilistic: 100%% flip probability at threshold.')
     
     # Dataset arguments
+    dataset_group = parser.add_argument_group('Dataset Selection (choose one)')
+    dataset_group.add_argument('--dataset', type=str, choices=['mnist', 'cifar10'], default='mnist',
+                        help='Dataset to use for training and testing (mnist or cifar10)')
     parser.add_argument('--labels', type=int, nargs='+', default=[1,0],
                         help='list of labels to use (default: 1 0)')
     parser.add_argument('--all-labels', action='store_true', default=False,
                         help='Use all labels instead of binary classification')
-    parser.add_argument('--all-labels-cifar', action='store_true', default=False,
-                        help='Use all labels instead of binary classification for CIFAR')
+    # parser.add_argument('--all-labels-cifar', action='store_true', default=False,
+    #                     help='Use all labels instead of binary classification for CIFAR')
+    # # CIFAR dataset arguments
+    # parser.add_argument('--labels-cifar', type=int, nargs='+', default=[0, 1],
+    #                     help='list of CIFAR-10 labels to use (default: 0 1)')
     
     # Model arguments
     parser.add_argument('--spread', type=int, default=10, metavar='N',
                         help='Spread for the activation function')
-    parser.add_argument('--use-relu', action='store_true', default=False,
-                        help='Use ReLU activation instead of boolean activation')
-    # parser.add_argument('--activate-before-output', action='store_true', default=False,
-    #                     help='Apply activation function before the output layer')
     parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
                         help='List of hidden layer sizes (default: [64])')
 
@@ -107,6 +109,8 @@ def filter_dataset_by_labels(dataset, wanted_labels, debug=False):
     
     # Filter dataset to only include wanted labels
     mask = torch.tensor([label in wanted_labels for label in dataset.targets])
+    if not isinstance(dataset.targets, torch.Tensor):
+        dataset.targets = torch.tensor(dataset.targets)
     dataset.data = dataset.data[mask]
     dataset.targets = dataset.targets[mask]
 
