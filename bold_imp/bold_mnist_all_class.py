@@ -51,17 +51,18 @@ class LogitsNet(nn.Module):
 def parse_arch(arch):
     """Parse architecture string into a list of layer specifications.
 
-    Format: 'conv-CxKxK-S-P,conv-CxKxK-S-P,linear-N'
+    Format: 'conv-CxKxK-S-P,conv-CxKxK-S-P,linear-N,activation-type'
     
     Where:
-    - conv/linear specifies the layer type
+    - conv/linear/activation specifies the layer type
     - C is number of output channels (for conv)
     - K is kernel size (for conv)
     - S is stride (for conv)
     - P is padding (for conv) 
     - N is output size (for linear)
+    - type is the activation function type (for activation)
     
-    Example: 'conv-36x14x14-1-0,conv-36x14x14-1-0,linear-100,linear-10'
+    Example: 'conv-36x14x14-1-0,conv-36x14x14-1-0,activation-relu,linear-100,linear-10'
     """
     if not arch:
         return []
@@ -93,6 +94,14 @@ def parse_arch(arch):
                 'out_features': out_features
             })
             
+        elif layer_type == 'activation':
+            # Parse activation layer: type
+            activation_type = parts[1]
+            layers.append({
+                'type': 'activation',
+                'activation_type': activation_type
+            })
+            
     return layers
 
 def build_conv_layer(layer_spec, c_in, H, W):
@@ -110,10 +119,37 @@ def build_linear_layer(layer_spec, dim_in):
     dim_out = layer_spec['out_features']
     return XNORLinear(dim_in, dim_out, bool_bprop=False), dim_out
 
+def build_activation_layer(layer_spec, args):
+    """Build an activation layer based on the specification.
+    
+    Args:
+        layer_spec: Dictionary containing layer specifications
+        args: Command line arguments
+        
+    Returns:
+        Activation layer module
+    """
+    assert layer_spec['type'] == 'activation'
+    activation_type = layer_spec['activation_type'].lower()
+    
+    if activation_type == 'relu':
+        return nn.ReLU()
+    elif activation_type == 'leakyrelu':
+        return nn.LeakyReLU()
+    elif activation_type == 'sigmoid':
+        return nn.Sigmoid()
+    elif activation_type == 'tanh':
+        return nn.Tanh()
+    elif activation_type == 'bool':
+        return BoolActvWithThreshDiscrete(0, spread=args.spread)
+    else:
+        raise ValueError(f"Unsupported activation type: {activation_type}")
+
 class LogitsConvNet_v2(nn.Module):
     def __init__(self, args):
         super(LogitsConvNet_v2, self).__init__()
         self.bool_layers = nn.ModuleList()
+        self.activation_layers = nn.ModuleList()  # New module list for activation layers
         self.spread = args.spread
         self.use_relu = args.use_relu
         if args.all_labels_cifar:
@@ -139,17 +175,26 @@ class LogitsConvNet_v2(nn.Module):
                 layer, output_dim = build_linear_layer(layer_spec, dim_in)
                 dim_in = output_dim
                 self.bool_layers.append(layer)
+            elif layer_spec['type'] == 'activation':
+                # Add activation layer
+                activation_layer = build_activation_layer(layer_spec, args)
+                self.activation_layers.append(activation_layer)
+                self.bool_layers.append(activation_layer)
 
     def forward(self, x):
-        for i in range(len(self.bool_layers) - 1):
+        # for i in range(len(self.bool_layers) - 1):
+        #     if i == self.last_conv_layer_index:
+        #         x = x.view(x.size(0), -1)
+        #     x = self.bool_layers[i](x)
+        #     if not self.use_relu:
+        #         x = BoolActvWithThreshDiscrete(0, spread=self.spread)(x)
+        #     else:
+        #         x = F.relu(x)
+        # x = self.bool_layers[-1](x)
+        for i in range(len(self.bool_layers)):
             if i == self.last_conv_layer_index:
                 x = x.view(x.size(0), -1)
             x = self.bool_layers[i](x)
-            if not self.use_relu:
-                x = BoolActvWithThreshDiscrete(0, spread=self.spread)(x)
-            else:
-                x = F.relu(x)
-        x = self.bool_layers[-1](x)
         return x, None
 
 class LogitsConvNet(nn.Module):
