@@ -1,0 +1,1 @@
+conv-32x3x3-1-1,activation-bool,conv-32x3x3-1-1,pool-max-2x2-2-0,activation-bool,conv-64x3x3-1-1,activation-bool,conv-64x3x3-1-1,pool-max-2x2-2-0,activation-bool,linear-2048,activation-bool,linear-1024,activation-bool,linear-10

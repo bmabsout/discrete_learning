@@ -21,6 +21,7 @@ def calculate_flip_probabilities(gradient_values: Tensor, flip_ratio: float = 0.
     if mean_positive == 0:
         return torch.zeros_like(gradient_values)
     return torch.clamp(flip_ratio * positive_values / mean_positive, 0, 1)
+    # return torch.clamp(flip_ratio * torch.sigmoid(positive_values / mean_positive * 4 - 2), 0, 1)
 
 
 def validate_tensors_for_bool_opt(validate_me: Tensor) -> None:

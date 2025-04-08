@@ -163,6 +163,7 @@ def build_pool_layer(layer_spec, c_in, H, W):
 class LogitsConvNet_v2(nn.Module):
     def __init__(self, args):
         super(LogitsConvNet_v2, self).__init__()
+        self.args = args
         self.bool_layers = nn.ModuleList()
         # self.activation_layers = nn.ModuleList()  # New module list for activation layers
         self.spread = args.spread
@@ -206,6 +207,8 @@ class LogitsConvNet_v2(nn.Module):
             if i == self.first_linear_layer_index:
                 x = x.view(x.size(0), -1)
             x = self.bool_layers[i](x)
+            if self.args.loss_cross_entropy:
+                x = F.log_softmax(x, dim=1)
         return x, None
 
 
@@ -309,7 +312,7 @@ def get_transform(args):
     if args.integer_input and args.dataset == 'cifar10' and args.input_augmentation:
         steps = args.integer_input_steps
         print(f"Augmented; Integer input transformation with {steps} steps")
-        mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261]
+        # mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261]
         return transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(20),
