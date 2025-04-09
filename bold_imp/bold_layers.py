@@ -24,7 +24,7 @@ class XNORLinear(nn.Linear):
 
 class XNORConv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, **kwargs):
-        super().__init__(in_channels, out_channels, kernel_size, **kwargs)
+        super().__init__(in_channels, out_channels, kernel_size, bias=False, **kwargs)
         # Initialize parameters
         self.reset_parameters()
     
