@@ -237,6 +237,11 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
         output, _ = model(data)
         loss = criterion(output, target)
         loss.backward()
+
+        pred = torch.argmax(output, dim=1)
+        num_correct = pred.eq(target).sum().item()
+        num_total = len(target)
+        config.hooks['cur_acc'] = (num_correct, num_total)
         
         if optimizer is not None:
             optimizer.step()

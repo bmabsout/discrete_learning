@@ -1,4 +1,5 @@
 import torch
+import config
 from torch import Tensor
 from typing import Callable, Dict, Any, Protocol, List, Union, Optional
 from utils import get_tensor_stats
@@ -69,6 +70,8 @@ def get_threshold_decider(thresh: int) -> FlipDecider:
 
 def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
     def probabilistic_flip_decider(weights: Tensor, accumulated_grad: Tensor) -> Tensor:
+        num_correct, num_total = config.hooks['cur_acc']
+        # use the information above to adaptively decide the flip ratio
         flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, flip_ratio)
         flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, flip_ratio)
         
