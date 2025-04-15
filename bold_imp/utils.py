@@ -58,6 +58,8 @@ def get_args():
                         help='Spread for the activation function')
     parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
                         help='List of hidden layer sizes (default: [64])')
+    parser.add_argument('--output-range', type=int, nargs='+', default=[-1,1],
+                        help='List of output range (default: [-1,1])')
 
     # Input transformation arguments
     transform_group = parser.add_argument_group('Input Transformation Options')

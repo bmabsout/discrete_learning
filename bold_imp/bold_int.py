@@ -129,7 +129,7 @@ def build_activation_layer(layer_spec, args):
     elif activation_type == 'tanh':
         return nn.Tanh()
     elif activation_type == 'bool':
-        return BoolActvWithThreshDiscrete(0, spread=args.spread)
+        return BoolActvWithThreshDiscrete(0, spread=args.spread, output_range=args.output_range)
     else:
         raise ValueError(f"Unsupported activation type: {activation_type}")
     

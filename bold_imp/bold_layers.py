@@ -304,15 +304,17 @@ def test_ANDLinear():
 
 class ActvFunctionWithThreshDiscrete(autograd.Function):
     @staticmethod
-    def forward(ctx, X, sup, spread):
+    def forward(ctx, X, sup, spread, output_range):
         ctx.save_for_backward(X)
         ctx.sup = sup
         ctx.spread = spread
+        ctx.output_range = output_range
 
         if config.args.float16:
             S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
         else:
-            S = 2 * torch.ge(X,sup // 2).float() - 1.
+            # S = 2 * torch.ge(X,sup // 2).float() - 1.
+            S = torch.clamp(X, output_range[0], output_range[1])
         return S
 
     @staticmethod
@@ -331,16 +333,16 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
             G_X[dist < spread] = 1
  
         G_X = Z * G_X        
-        return G_X, None, None
+        return G_X, None, None, None
         
 class BoolActvWithThreshDiscrete(nn.Module):
-    def __init__(self, sup, spread):
+    def __init__(self, sup, spread, output_range = (-1,1)):
         super().__init__()
         self.sup = sup
         self.spread = spread
-
+        self.output_range = output_range
     def forward(self, X) :
-        return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread)
+        return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread, self.output_range)
 
 
 ################### MARK: BoolActv ###################
