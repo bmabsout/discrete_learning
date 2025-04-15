@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import config
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
@@ -19,6 +20,10 @@ class XNORConv2d(nn.Module):
         # initialize the weights with either 1.0 or -1.0 based on threshold at 0
         random_values = torch.randint(0, 2, self.conv.weight.shape)
         self.conv.weight = nn.Parameter(2 * random_values.float() - 1)
+        if config.args.float16:
+            self.conv.weight = nn.Parameter(2 * random_values.to(torch.float16) - 1)
+        else:
+            self.conv.weight = nn.Parameter(2 * random_values.float() - 1)
 
         if self.conv.bias is not None:
             self.conv.bias = nn.Parameter(2 * torch.randint(0, 2, (self.conv.out_channels,)).float() - 1)

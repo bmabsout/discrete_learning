@@ -5,7 +5,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
-
+import config
 ################### MARK: normal linear layer with -1 and 1 as weights. No bias ###################
 # equivalent to XNORLinear
 
@@ -17,7 +17,10 @@ class XNORLinear(nn.Linear):
     def reset_parameters(self):
         # Initialize weights to either -1.0 or 1.0
         random_values = torch.randint(0, 2, self.weight.shape)
-        self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
+        if config.args.float16:
+            self.weight = nn.Parameter(2.0 * random_values.to(torch.float16) - 1.0)
+        else:
+            self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
 
 ################### MARK: normal conv2d layer with -1 and 1 as weights. No bias ###################
 # equivalent to XNORConv2d
@@ -31,7 +34,10 @@ class XNORConv2d(nn.Conv2d):
     def reset_parameters(self):
         # Initialize weights to either -1.0 or 1.0
         random_values = torch.randint(0, 2, self.weight.shape)
-        self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
+        if config.args.float16:
+            self.weight = nn.Parameter(2.0 * random_values.to(torch.float16) - 1.0)
+        else:
+            self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
 
 ################### MARK: XORLinear ###################
 
@@ -303,7 +309,10 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         ctx.sup = sup
         ctx.spread = spread
 
-        S = 2 * torch.ge(X,sup // 2).float() - 1.
+        if config.args.float16:
+            S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
+        else:
+            S = 2 * torch.ge(X,sup // 2).float() - 1.
         return S
 
     @staticmethod
@@ -314,8 +323,12 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
 
         dist = torch.abs(X - sup // 2)
         # Create a mask where distance is less than spread
-        G_X = torch.zeros_like(dist)
-        G_X[dist < spread] = 1
+        if config.args.float16:
+            G_X = torch.zeros_like(dist).to(torch.float16)
+            G_X[dist < spread] = 1
+        else:
+            G_X = torch.zeros_like(dist)
+            G_X[dist < spread] = 1
  
         G_X = Z * G_X        
         return G_X, None, None

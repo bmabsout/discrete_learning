@@ -45,7 +45,14 @@ def get_args():
     # # CIFAR dataset arguments
     # parser.add_argument('--labels-cifar', type=int, nargs='+', default=[0, 1],
     #                     help='list of CIFAR-10 labels to use (default: 0 1)')
-    
+
+    parser.add_argument('--float16', action='store_true', default=False,
+                        help='Use float16 precision for computations')
+    parser.add_argument('--float8', action='store_true', default=False,
+                        help='Use float8 precision for computations')
+
+
+
     # Model arguments
     parser.add_argument('--spread', type=int, default=10, metavar='N',
                         help='Spread for the activation function')

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import config
 from torchvision import datasets, transforms
 from typing import Any , List , Optional , Callable
 from utils import get_args, filter_dataset_by_labels, get_output_dim
@@ -230,7 +231,8 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     accs = []
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
-
+        if config.args.float16:
+            data = data.to(torch.float16)
         zero_grads_for([optimizer, optimizer_bool])
         output, _ = model(data)
         loss = criterion(output, target)
@@ -309,6 +311,15 @@ def get_model(args):
         raise ValueError("Choose an architecture from --conv-xnor or --xnor")
 
 def get_transform(args):
+    if config.args.float16:
+        print("Using float16")
+        compress = lambda x: x.to(torch.float16)
+    elif config.args.float8:
+        print("Using float8")
+        compress = lambda x: x.to(torch.float8_e4m3fn)  # or torch.float8_e5m2
+    else:
+        compress = lambda x: x
+
     if args.integer_input and args.dataset == 'cifar10' and args.input_augmentation:
         steps = args.integer_input_steps
         print(f"Augmented; Integer input transformation with {steps} steps")
@@ -331,7 +342,8 @@ def get_transform(args):
             transforms.ToTensor(),  # This handles the (C,H,W) conversion
             transforms.Lambda(lambda x: x * steps),  # Convert to [0,255]
             transforms.Lambda(lambda x: x - steps / 2),  # Center around zero: [-127.5, 127.5]
-            transforms.Lambda(lambda x: torch.floor(x))  # Floor to get integer values: [-127, 127]
+            transforms.Lambda(lambda x: torch.floor(x)),  # Floor to get integer values: [-127, 127]
+            transforms.Lambda(compress)
         ])
     elif args.input_grayscale:
         steps = args.input_grayscale_steps
@@ -353,6 +365,7 @@ def main():
     args = get_args()
     if args.all_labels:
         args.labels = range(10)
+    config.args = args
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     use_mps = not args.no_mps and torch.backends.mps.is_available()
     torch.manual_seed(args.seed)

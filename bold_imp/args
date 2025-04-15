@@ -1,1 +1,1 @@
---use-momentum --use-probabilistic --dataset cifar10 --integer-input --conv-xnor-v2 --loss-naive --epochs 100 --spread 100
+--use-momentum --use-probabilistic --dataset mnist --conv-xnor-v2 --loss-naive --epochs 100 --spread 100 --integer-input

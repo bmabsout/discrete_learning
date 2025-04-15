@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import config
 from torch import Tensor , autograd
 from torch.nn import functional as F
 
@@ -118,7 +119,10 @@ class MixtypeXORLossF(autograd.Function):
         # print("sum of X:", torch.sum(X, dim=0))
         # Initialize gradient tensor
         grad_X = torch.ones_like(X)  # All incorrect classes get 1
-        
+        if config.args.float16:
+            grad_X = grad_X.to(torch.float16)
+            grad_output = grad_output.to(torch.float16)
+
         # Set correct class gradients to -1
         grad_X[torch.arange(batch_size), target] = -num_classes
 
