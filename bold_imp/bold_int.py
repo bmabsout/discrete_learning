@@ -260,14 +260,18 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
             print()
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tAcc: {:.2f}%\tFlips: {}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item(), train_acc, batch_flips), end="\t")
-            
+                100. * batch_idx / len(train_loader), loss.item(), train_acc, batch_flips), end="\n")
+            # print(f'0-grad% {config.hooks}')
+            for key, value in config.hooks.items():
+                if key != 'cur_acc':
+                    print(f'{key}: {value}')
             # Log statistics using the new log_stats method
             if isinstance(optimizer_bool, BaseBooleanOptimizer) and optimizer_bool is not None:
                 optimizer_bool.log_stats()
             
             if args.dry_run:
                 break
+            print()
     print(f'\nAverage accuracy: {sum(accs) / len(accs):.4f}')
     print('\nTotal flips in epoch {}: {}'.format(epoch, total_flips))
 

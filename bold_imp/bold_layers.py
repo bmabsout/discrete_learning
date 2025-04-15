@@ -304,11 +304,12 @@ def test_ANDLinear():
 
 class ActvFunctionWithThreshDiscrete(autograd.Function):
     @staticmethod
-    def forward(ctx, X, sup, spread, output_range):
+    def forward(ctx, X, sup, spread, output_range, id):
         ctx.save_for_backward(X)
         ctx.sup = sup
         ctx.spread = spread
         ctx.output_range = output_range
+        ctx.id = id 
 
         if config.args.float16:
             S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
@@ -331,18 +332,28 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         else:
             G_X = torch.zeros_like(dist)
             G_X[dist < spread] = 1
- 
+        # Calculate number of zero gradients
+        num_zeros = torch.sum(G_X == 0).item()
+        # Calculate total number of gradients
+        total_gradients = G_X.numel()
+        # Calculate percentage of zero gradients
+        zero_grad_percentage = num_zeros / total_gradients
+        config.hooks[f'0_grad_{ctx.id}'] = (num_zeros, total_gradients, zero_grad_percentage)
+
         G_X = Z * G_X        
-        return G_X, None, None, None
+        return G_X, None, None, None, None
         
 class BoolActvWithThreshDiscrete(nn.Module):
+    id = 0
     def __init__(self, sup, spread, output_range = (-1,1)):
         super().__init__()
         self.sup = sup
         self.spread = spread
         self.output_range = output_range
+        self.id = BoolActvWithThreshDiscrete.id
+        BoolActvWithThreshDiscrete.id += 1
     def forward(self, X) :
-        return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread, self.output_range)
+        return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread, self.output_range, self.id)
 
 
 ################### MARK: BoolActv ###################
