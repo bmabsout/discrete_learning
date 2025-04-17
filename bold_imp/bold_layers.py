@@ -342,10 +342,10 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         # Calculate number of zero gradients
         num_zeros = torch.sum(G_X == 0).item()
         # Calculate total number of gradients
-        total_gradients = G_X.numel()
+        # total_gradients = G_X.numel()
         # Calculate percentage of zero gradients
-        zero_grad_percentage = num_zeros / total_gradients
-        config.hooks[f'0_grad_{ctx.id}'] = (num_zeros, total_gradients, zero_grad_percentage)
+        # zero_grad_percentage = num_zeros / total_gradients
+        # config.hooks[f'0_grad_{ctx.id}'] = (num_zeros, total_gradients, zero_grad_percentage)
 
         G_X = Z * G_X        
         return G_X, None, None, None, None

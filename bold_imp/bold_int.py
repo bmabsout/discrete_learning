@@ -260,9 +260,9 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item(), train_acc, batch_flips), end="\n")
             # print(f'0-grad% {config.hooks}')
-            for key, value in config.hooks.items():
-                if key != 'cur_acc':
-                    print(f'{key}: {value}')
+            # for key, value in config.hooks.items():
+            #     if key != 'cur_acc':
+            #         print(f'{key}: {value}')
             # Log statistics using the new log_stats method
             if isinstance(optimizer_bool, BaseBooleanOptimizer) and optimizer_bool is not None:
                 optimizer_bool.log_stats()
@@ -426,8 +426,8 @@ def main():
 
     model = get_model(args).to(device)
     
-    # fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
-    fp_params = [x for name,x in model.named_parameters() ]
+    fp_params = [x for name,x in model.named_parameters() if 'bool_' not in name]
+    # fp_params = [x for name,x in model.named_parameters() ]
     optimizer = optim.Adam(fp_params, lr=args.lr) if len(fp_params) > 0 else None
 
     bool_params = [x for name,x in model.named_parameters() if 'bool_' in name]
@@ -437,14 +437,14 @@ def main():
         if args.use_momentum:
             print(f"Using probabilistic momentum optimizer with flip ratio={args.flip_ratio:.6f}, "
                   f"momentum={args.momentum}, dampening={args.dampening}")
-            # optimizer_bool = create_probabilistic_momentum_optimizer(
-            #     bool_params,
-            #     lr=args.lr,
-            #     momentum=args.momentum,
-            #     dampening=args.dampening,
-            #     flip_ratio=args.flip_ratio
-            # )
-            optimizer_bool = None
+            optimizer_bool = create_probabilistic_momentum_optimizer(
+                bool_params,
+                lr=args.lr,
+                momentum=args.momentum,
+                dampening=args.dampening,
+                flip_ratio=args.flip_ratio
+            )
+            # optimizer_bool = None
         else:
             print(f"Using probabilistic optimizer with flip ratio={args.flip_ratio:.6f}")
             optimizer_bool = create_probabilistic_optimizer(
