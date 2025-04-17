@@ -311,6 +311,9 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         ctx.output_range = output_range
         ctx.id = id 
 
+        std = torch.std(X)
+        ctx.std = X
+
         if config.args.float16:
             S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
         else:
@@ -323,6 +326,9 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         X, = ctx.saved_tensors
         sup = ctx.sup
         spread = ctx.spread
+        std = ctx.std
+
+        # print(torch.std(X))
 
         dist = torch.abs(X - sup // 2)
         # Create a mask where distance is less than spread
@@ -332,6 +338,7 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         else:
             G_X = torch.zeros_like(dist)
             G_X[dist < spread] = 1
+            # G_X[dist < std * 4] = 1
         # Calculate number of zero gradients
         num_zeros = torch.sum(G_X == 0).item()
         # Calculate total number of gradients

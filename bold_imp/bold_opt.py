@@ -21,6 +21,11 @@ def calculate_flip_probabilities(gradient_values: Tensor, flip_ratio: float = 0.
     mean_positive = torch.mean(positive_values)
     if mean_positive == 0:
         return torch.zeros_like(gradient_values)
+    # return torch.ones(1)
+    # t = torch.clamp(flip_ratio * positive_values / mean_positive, 0., 1.)
+    # print(t.dtype)
+    # print(t.shape)
+    # return torch.ones_like(positive_values)
     return torch.clamp(flip_ratio * positive_values / mean_positive, 0, 1)
     # return torch.clamp(flip_ratio * torch.sigmoid(positive_values / mean_positive * 4 - 2), 0, 1)
 
@@ -72,8 +77,13 @@ def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
     def probabilistic_flip_decider(weights: Tensor, accumulated_grad: Tensor) -> Tensor:
         num_correct, num_total = config.hooks['cur_acc']
         # use the information above to adaptively decide the flip ratio
-        flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, flip_ratio)
-        flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, flip_ratio)
+        # if the acc is quite high, then make the flip_ratio even smaller 
+        acc = num_correct / num_total
+        k = 1 - (0.99 * acc)
+        # flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, flip_ratio)
+        # flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, flip_ratio)
+        flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, k * flip_ratio)
+        flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, k * flip_ratio)
         
         flip_probs = torch.where(weights == 1.0, flip_prob_weights_1, flip_prob_weights_0)
         random_values = torch.rand_like(flip_probs)
