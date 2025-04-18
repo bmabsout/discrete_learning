@@ -307,18 +307,19 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
     def forward(ctx, X, sup, spread, output_range, id):
         ctx.save_for_backward(X)
         ctx.sup = sup
-        ctx.spread = spread
+        ctx.spread = (X.mean() - X).abs().mean()
         ctx.output_range = output_range
         ctx.id = id 
 
-        std = torch.std(X)
-        ctx.std = X
+        # std = torch.std(X)
+        # ctx.std = X
 
         if config.args.float16:
             S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
         else:
             # S = 2 * torch.ge(X,sup // 2).float() - 1.
-            S = torch.clamp(X, output_range[0], output_range[1])
+            # S = torch.clamp(X, output_range[0], output_range[1])
+            S = X.clamp(output_range[0], output_range[1])
         return S
 
     @staticmethod
@@ -326,7 +327,6 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         X, = ctx.saved_tensors
         sup = ctx.sup
         spread = ctx.spread
-        std = ctx.std
 
         # print(torch.std(X))
 
@@ -338,9 +338,18 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         else:
             G_X = torch.zeros_like(dist)
             G_X[dist < spread] = 1
+
+            
+
+
+
+
+
+
+
             # G_X[dist < std * 4] = 1
         # Calculate number of zero gradients
-        num_zeros = torch.sum(G_X == 0).item()
+        # num_zeros = torch.sum(G_X == 0).item()
         # Calculate total number of gradients
         # total_gradients = G_X.numel()
         # Calculate percentage of zero gradients

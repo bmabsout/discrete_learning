@@ -108,6 +108,9 @@ class MixtypeXORLossF(autograd.Function):
         
         return loss_corr + loss_incorr
 
+
+        # return torch.ones(1)
+
     @staticmethod
     def backward(ctx, grad_output):
         X, target, mask = ctx.saved_tensors

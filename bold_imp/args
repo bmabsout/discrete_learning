@@ -1,1 +1,1 @@
---use-momentum --use-probabilistic --dataset cifar10 --conv-xnor-v2 --loss-naive --epochs 100 --spread 5000 --integer-input --all-labels --output-range -50 50 --batch-size 32 --log-interval 1
+--use-momentum --use-probabilistic --dataset cifar10 --conv-xnor-v2 --loss-naive --epochs 100 --integer-input --all-labels --output-range -50 50 --batch-size 256

@@ -80,30 +80,14 @@ def get_threshold_decider(thresh: int) -> FlipDecider:
 def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
     def probabilistic_flip_decider(weights: Tensor, accumulated_grad: Tensor) -> Tensor:
         num_correct, num_total = config.hooks['cur_acc']
-        # use the information above to adaptively decide the flip ratio
-        # if the acc is quite high, then make the flip_ratio even smaller 
-
-        #####
         acc = num_correct / num_total
         k = 1 - (0.99 * acc)
-        flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, flip_ratio)
-        flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, flip_ratio)
-        # # flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, k * flip_ratio)
-        # # flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, k * flip_ratio)
-        
+
+        flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, k * flip_ratio)
+        flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, k * flip_ratio)
         flip_probs = torch.where(weights == 1.0, flip_prob_weights_1, flip_prob_weights_0)
-        ####
-
-        # mask1 = accumulated_grad>0
-        # mean_positive1 = torch.mean(accumulated_grad[mask1])
-        # flip_prob_weights_1 = k * flip_ratio * accumulated_grad[mask1] / mean_positive1
-
-        # mask2 = accumulated_grad < 0
-        # mean_positive2 = -torch.mean(accumulated_grad[mask2])
-        # flip_prob_weights_0 = -k * flip_ratio * accumulated_grad[mask2] / mean_positive2
 
         random_values = torch.rand_like(flip_probs)
-        
         return random_values < flip_probs
     
     probabilistic_flip_decider.flip_ratio = flip_ratio  # type: ignore
