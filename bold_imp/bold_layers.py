@@ -307,7 +307,7 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
     def forward(ctx, X, sup, spread, output_range, id):
         ctx.save_for_backward(X)
         ctx.sup = sup
-        ctx.spread = (X.mean() - X).abs().mean()
+        ctx.spread = (X.mean() - X).abs().mean() if config.args.spread is None else config.args.spread
         ctx.output_range = output_range
         ctx.id = id 
 

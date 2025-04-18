@@ -54,7 +54,7 @@ def get_args():
 
 
     # Model arguments
-    parser.add_argument('--spread', type=int, default=10, metavar='N',
+    parser.add_argument('--spread', type=int, default=None, metavar='N',
                         help='Spread for the activation function')
     parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
                         help='List of hidden layer sizes (default: [64])')
@@ -103,6 +103,8 @@ def get_args():
     prob_group = parser.add_argument_group('Probabilistic Parameters (used with --use-probabilistic)')
     prob_group.add_argument('--flip-ratio', type=float, default=0.001,
                         help='Target percentage of parameters to flip per step (default: 0.001, i.e., 0.1%%)')
+    prob_group.add_argument('--flip-ratio-decay', type=float, default=0.9,
+                        help='Decay rate for flip ratio per epoch (default: 0.9)')
 
     # Loss function arguments
     loss_group = parser.add_mutually_exclusive_group()

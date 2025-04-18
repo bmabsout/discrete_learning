@@ -471,6 +471,7 @@ def main():
         )
 
     for epoch in range(1, args.epochs + 1):
+        config.hooks['epoch'] = epoch
         train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
         test(args, model, device, test_loader)
 
