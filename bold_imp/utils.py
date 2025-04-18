@@ -47,15 +47,16 @@ def get_args():
     #                     help='list of CIFAR-10 labels to use (default: 0 1)')
 
     parser.add_argument('--float16', action='store_true', default=False,
-                        help='Use float16 precision for computations')
-    parser.add_argument('--float8', action='store_true', default=False,
-                        help='Use float8 precision for computations')
-
-
+                        help='Use float16 precision for computations; Likely buggy; Inspect before using')
 
     # Model arguments
     parser.add_argument('--spread', type=int, default=None, metavar='N',
                         help='Spread for the activation function')
+    parser.add_argument('--use-std-spread', action='store_true', default=False,
+                        help='Use standard deviation of X as base to calculate spread for the activation function')
+    parser.add_argument('--use-fix-ratio-spread', type=float, default=None,
+                        help='Use fixed ratio of some parameters of linear layer as spread base')
+    
     parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
                         help='List of hidden layer sizes (default: [64])')
     parser.add_argument('--output-range', type=int, nargs='+', default=[-1,1],

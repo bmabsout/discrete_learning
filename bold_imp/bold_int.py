@@ -374,10 +374,7 @@ def main():
         args.labels = range(10)
     config.args = args
 
-    # print(f"Architecture {args.arch}")
-    # print(f"output-range {args.output_range}")
-    # print(f"batch size {args.batch_size}")
-    # print(f"")
+    
     print(args)
 
 

@@ -302,6 +302,17 @@ def test_ANDLinear():
 
 ################### MARK: BoolActvWithThreshDiscrete ###################
 
+def get_spread(X):
+    if config.args.spread is not None:
+        return config.args.spread
+    elif config.args.use_std_spread:
+        return (X.mean() - X).abs().mean()
+    elif config.args.use_fix_ratio_spread is not None:
+        # return config.args.fix_ratio_spread * (X.mean() - X).abs().mean()
+        assert False, "not implemented"
+    else:
+        assert False, "cannot resolve spread parameter"
+
 class ActvFunctionWithThreshDiscrete(autograd.Function):
     @staticmethod
     def forward(ctx, X, sup, spread, output_range, id):
@@ -339,15 +350,6 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
             G_X = torch.zeros_like(dist)
             G_X[dist < spread] = 1
 
-            
-
-
-
-
-
-
-
-            # G_X[dist < std * 4] = 1
         # Calculate number of zero gradients
         # num_zeros = torch.sum(G_X == 0).item()
         # Calculate total number of gradients
