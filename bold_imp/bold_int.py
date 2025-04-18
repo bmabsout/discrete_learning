@@ -321,9 +321,6 @@ def get_transform(args):
     if config.args.float16:
         print("Using float16")
         compress = lambda x: x.to(torch.float16)
-    elif config.args.float8:
-        print("Using float8")
-        compress = lambda x: x.to(torch.float8_e4m3fn)  # or torch.float8_e5m2
     else:
         compress = lambda x: x
 
