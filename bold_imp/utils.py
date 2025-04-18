@@ -117,6 +117,8 @@ def get_args():
                         help='Use cross entropy loss')
     parser.add_argument('--loss-int-scaling-alpha', type=int, default=1000, metavar='N',
                         help='Alpha for integer scaling loss')
+    loss_group.add_argument('--loss-fake-l1', action='store_true', default=False,
+                            help='Use fake L1 loss. This one requires the last layer to be activation with range.')
     return parser.parse_args()
 
 def filter_dataset_by_labels(dataset, wanted_labels, debug=False):

@@ -18,7 +18,7 @@ from bold_opt import (
     create_probabilistic_optimizer,
     create_probabilistic_momentum_optimizer
 )
-from bold_loss import XORMismatchLoss, IntScalingLoss, MixtypeXORLoss
+from bold_loss import XORMismatchLoss, IntScalingLoss, MixtypeXORLoss, IntL1Loss
 
 
 def parse_arch(arch):
@@ -304,6 +304,9 @@ def get_criterion(args):
     elif args.loss_cross_entropy:
         print("Use CrossEntropyLoss")
         return F.nll_loss
+    elif args.loss_fake_l1:
+        print("Use IntL1Loss")
+        return IntL1Loss(activation_range=(args.output_range[0], args.output_range[1]))
     else:
         raise ValueError("Choose a loss function from --loss-X")
         

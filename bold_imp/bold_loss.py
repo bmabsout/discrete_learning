@@ -61,6 +61,8 @@ class XORMismatchLossF(autograd.Function):
         target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
         return torch.logical_not(target_onehot) * grad_output, None
 
+# MARK: MixtypeXORLoss
+
 class MixtypeXORLoss(nn.Module):
     """
     The XORMismatchLoss above kills some signals.
@@ -136,6 +138,35 @@ class MixtypeXORLossF(autograd.Function):
         # For incorrect class index we have dL/dy = T, indeed, when y gets larger, L increases. 
         # because True means the direction of change is the same.
         return grad_X * grad_output, None
+
+# MARK: IntL1Loss
+
+class IntL1Loss(nn.Module):
+    def __init__(self, activation_range: tuple[int, int]):
+        super().__init__()
+        self.activation_range = activation_range
+
+    def forward(self, X, target):
+        return IntL1LossF.apply(X, target, self.activation_range)
+    
+class IntL1LossF(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, target, activation_range):
+        eff_target = -torch.ones_like(X) * activation_range[1]
+        eff_target[torch.arange(X.size(0)), target] = activation_range[1] * len(config.args.labels)
+        loss = torch.sum(torch.abs(X - eff_target))
+
+        ctx.save_for_backward(X, target, eff_target)
+        return loss
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        X, target, eff_target = ctx.saved_tensors
+        # grad_X = eff_target - X
+        grad_X = X - eff_target
+        return grad_X * grad_output, None, None
+
+# MARK: IntScalingLoss
 
 class IntScalingLoss(nn.Module):
     """
