@@ -80,7 +80,10 @@ def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
 
         # per-batch accuracy feedbcak loop
         acc = num_correct / num_total
-        k = 1 - (0.99 * acc)
+        k = 1 - (0.3 * acc)
+        
+        # MARK 
+        # k = 1
 
         # flip-ratio decay
         r = epoch // 10
@@ -90,15 +93,6 @@ def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
         flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, k * flip_ratio * cur_flip_ratio_decay)
         flip_probs = torch.where(weights == 1.0, flip_prob_weights_1, flip_prob_weights_0)
         random_values = torch.rand_like(flip_probs)
-
-        # if str(weights.shape) == "torch.Size([1024, 784])":
-        #     one_randomfloat = torch.rand_like(torch.tensor(1).float())
-        #     config.randscaler = one_randomfloat
-        # else:
-        #     one_randomfloat = config.randscaler
-
-        # random_values = torch.ones_like(flip_probs)
-        # random_values = one_randomfloat * torch.ones_like(flip_probs)
 
         return random_values < flip_probs
     
