@@ -75,18 +75,16 @@ def get_threshold_decider(thresh: int) -> FlipDecider:
 
 def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
     def probabilistic_flip_decider(weights: Tensor, accumulated_grad: Tensor) -> Tensor:
+
         num_correct, num_total = config.hooks['cur_acc']
         epoch = config.hooks['epoch']
 
         # per-batch accuracy feedbcak loop
         acc = num_correct / num_total
-        k = 1 - (0.3 * acc)
-        
-        # MARK 
-        # k = 1
+        k = 1 - (config.args.prob_flip_ratio_batch_acc_aware * acc)
 
         # flip-ratio decay
-        r = epoch // 10
+        r = epoch // config.args.prob_flip_ratio_decay_epochs
         cur_flip_ratio_decay = config.args.prob_flip_ratio_decay ** r
 
         flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, k * flip_ratio * cur_flip_ratio_decay)

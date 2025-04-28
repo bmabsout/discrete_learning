@@ -96,6 +96,10 @@ def get_args():
                         help='Target percentage of parameters to flip per step (default: 0.001, i.e., 0.1%%)')
     prob_group.add_argument('--prob-flip-ratio-decay', type=float, default=0.9,
                         help='Decay rate for flip ratio per epoch (default: 0.9)')
+    prob_group.add_argument('--prob-flip-ratio-decay-epochs', type=int, default=10,
+                        help='Number of epochs to decay flip ratio (default: 10)')
+    prob_group.add_argument('--prob-flip-ratio-batch-acc-aware', type=float, default=0.3,
+                        help='Scale flip ratio based on batch accuracy (default: 0.3)')
 
     # Loss function arguments
     loss_group = parser.add_mutually_exclusive_group()
@@ -221,6 +225,8 @@ def print_important_args(args):
     print(f"  - Probabilistic optimizer: {args.opt_probabilistic}")
     print(f"    - Flip ratio: {args.prob_flip_ratio}")
     print(f"    - Flip ratio decay: {args.prob_flip_ratio_decay}")
+    print(f"    - Flip ratio decay epochs: {args.prob_flip_ratio_decay_epochs}")
+    print(f"    - Flip ratio batch acc aware: {args.prob_flip_ratio_batch_acc_aware}")
     print()
     # loss function
     print("Loss function:")
