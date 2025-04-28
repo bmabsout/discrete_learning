@@ -26,20 +26,14 @@ def get_args():
     parser.add_argument('--save-model', action='store_true', default=False,
                         help='For Saving the current Model')
     
-    # Boolean optimizer arguments
-    parser.add_argument('--thresh', type=int, default=150, metavar='N',
-                        help='Threshold for weight flipping. Higher values make flipping less likely. '
-                             'For vanilla optimizer: flips when grad > thresh. '
-                             'For probabilistic: 100%% flip probability at threshold.')
-    
     # Dataset arguments
     dataset_group = parser.add_argument_group('Dataset Selection (choose one)')
     dataset_group.add_argument('--dataset', type=str, choices=['mnist', 'cifar10'], default='mnist',
                         help='Dataset to use for training and testing (mnist or cifar10)')
-    parser.add_argument('--labels', type=int, nargs='+', default=[1,0],
-                        help='list of labels to use (default: 1 0)')
-    parser.add_argument('--all-labels', action='store_true', default=False,
-                        help='Use all labels instead of binary classification')
+    # parser.add_argument('--labels', type=int, nargs='+', default=[1,0],
+    #                     help='list of labels to use (default: 1 0)')
+    # parser.add_argument('--all-labels', action='store_true', default=False,
+    #                     help='Use all labels instead of binary classification')
     # parser.add_argument('--all-labels-cifar', action='store_true', default=False,
     #                     help='Use all labels instead of binary classification for CIFAR')
     # # CIFAR dataset arguments
@@ -77,12 +71,8 @@ def get_args():
 
     # architecture arguments mutually exclusive
     architecture_group = parser.add_argument_group('Architecture Selection (choose one)')
-    architecture_group.add_argument('--conv-xnor', action='store_true', default=False,
-                        help='Use convolutional network')
     architecture_group.add_argument('--arch-custom', action='store_true', default=False,
                         help='Use convolutional network v2')
-    architecture_group.add_argument('--xnor', action='store_true', default=False,
-                        help='Use XNOR network')
     architecture_group.add_argument('--arch', type=str, default='',
                         help='Architecture specification for conv-xnor-v2')
 

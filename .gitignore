@@ -4,3 +4,5 @@ __pycache__
 data
 *.zip
 bold_imp/archives
+bold_imp/push.sh
+bold_imp/pull.sh

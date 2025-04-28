@@ -61,7 +61,7 @@ class XORMismatchLossF(autograd.Function):
         target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
         return torch.logical_not(target_onehot) * grad_output, None
 
-# MARK: MixtypeXORLoss
+# ---------------------------------- MARK: MixtypeXORLoss ----------------------------------
 
 class MixtypeXORLoss(nn.Module):
     """
@@ -110,19 +110,11 @@ class MixtypeXORLossF(autograd.Function):
         
         return loss_corr + loss_incorr
 
-
-        # return torch.ones(1)
-
     @staticmethod
     def backward(ctx, grad_output):
         X, target, mask = ctx.saved_tensors
         batch_size = X.size(0)
         num_classes = X.size(1)
-        # Get the number of instances per class
-        # num_instances_per_class = torch.sum(1-mask, dim=0)
-        # print(num_instances_per_class)
-        # print("sum of X:", torch.sum(X, dim=0))
-        # Initialize gradient tensor
         grad_X = torch.ones_like(X)  # All incorrect classes get 1
         if config.args.float16:
             grad_X = grad_X.to(torch.float16)
@@ -139,7 +131,7 @@ class MixtypeXORLossF(autograd.Function):
         # because True means the direction of change is the same.
         return grad_X * grad_output, None
 
-# MARK: IntL1Loss
+# ---------------------------------- MARK: IntL1Loss (Recommended) ----------------------------------
 
 class IntL1Loss(nn.Module):
     def __init__(self, activation_range: tuple[int, int]):
@@ -153,7 +145,7 @@ class IntL1LossF(autograd.Function):
     @staticmethod
     def forward(ctx, X, target, activation_range):
         eff_target = -torch.ones_like(X) * activation_range[1]
-        eff_target[torch.arange(X.size(0)), target] = activation_range[1] * len(config.args.labels)
+        eff_target[torch.arange(X.size(0)), target] = activation_range[1] * X.size(1)
         loss = torch.mean(torch.abs(X - eff_target))
 
         ctx.save_for_backward(X, target, eff_target)
@@ -166,7 +158,7 @@ class IntL1LossF(autograd.Function):
         grad_X = X - eff_target
         return grad_X * grad_output, None, None
 
-# MARK: IntScalingLoss
+# ---------------------------------- MARK: IntScalingLoss ----------------------------------
 
 class IntScalingLoss(nn.Module):
     """
@@ -213,109 +205,3 @@ class IntScalingLossF(autograd.Function):
         _, _, X_out, target_scaled = ctx.saved_tensors  # Retrieve X_out from context
         G_X = X_out - target_scaled
         return G_X * grad_output, None, None
-            
-
-def test_int_scaling_loss():
-    # Test case 1
-    print("Test case 1:")
-    input = torch.tensor([[100., 200., -10., 50.], [-30., -20., 10., 100.]], requires_grad=True)
-    target = torch.tensor([0, 1])
-    loss = IntScalingLoss(alpha=1000)
-    output = loss(input, target)
-    print("forward pass logits:")
-    print(output)
-    output.backward()
-    
-    print("\nTesting backward pass:")
-    print("Input gradients:")
-    print(input.grad)
-
-
-
-def test_mixtype_xor_loss():
-    # Test case 1
-    print("Test case 1:")
-    # Test backward pass
-    input = torch.tensor([[100., 200., -10., 50.], [-30., -20., 10., 100.]], requires_grad=True)
-    target = torch.tensor([0, 1])
-    loss = MixtypeXORLoss()
-    output = loss(input, target)
-    print("forward pass logits:")
-    print(output)
-    output.backward()
-    
-    print("\nTesting backward pass:")
-    print("Input gradients:")
-    print(input.grad)
-    input.grad = None  # Clear any existing gradients
-
-    # Test case 2
-    print("Test case 2:")
-    input = torch.tensor([[100., 200., -10., 50.], [-30., -20., 10., 100.]], requires_grad=True)
-    target = torch.tensor([1, 0])
-    loss = MixtypeXORLoss()
-    output = loss(input, target)
-    print("forward pass logits:")
-    print(output)
-    output.backward()
-    
-    print("\nTesting backward pass:")
-    print("Input gradients:")
-    print(input.grad)
-    
-
-def test_boolean_loss():
-    pred = torch.tensor([1, 0, 1, 0])
-    target = torch.tensor([1, 1, 0, 0])
-    loss = BooleanLoss()
-    print(loss(pred, target))
-
-def test_xor_mismatch_loss():
-    # Test case 1: Basic mismatch - output has multiple 1s
-    output = torch.tensor([[1, 1, 1, 0], [1, 1, 0, 0]])
-    target = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0]])  # one-hot encoded
-    loss = XORMismatchLoss()
-    print("Test case 1 loss:", loss(output, target).item())
-
-    # Test case 2: Perfect match
-    output = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0]])
-    target = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0]])  # one-hot encoded
-    print("Test case 2 loss:", loss(output, target).item())
-
-    # Test case 3: All mismatches - output has all 1s or all 0s
-    output = torch.tensor([[1, 1, 1, 1], [0, 0, 0, 0]])
-    target = torch.tensor([[0, 0, 1, 0], [1, 0, 0, 0]])  # one-hot encoded
-    print("Test case 3 loss:", loss(output, target).item())
-
-    # Test case 4: Mixed matches/mismatches with multiple 1s in output
-    output = torch.tensor([[1, 0, 1, 1], [0, 1, 1, 1], [1, 1, 0, 0]])
-    target = torch.tensor([[1, 0, 0, 0], [0, 0, 0, 1], [0, 1, 0, 0]])  # one-hot encoded
-    print("Test case 4 loss:", loss(output, target).item())
-
-    # Test case 5: Output with no 1s
-    output = torch.tensor([[0, 0, 0, 0], [0, 0, 0, 0]])
-    target = torch.tensor([[0, 0, 1, 0], [0, 0, 0, 1]])  # one-hot encoded
-    print("Test case 5 loss:", loss(output, target).item())
-
-    # Test case 6: Large batch with varied mismatches
-    output = torch.tensor([
-        [1, 1, 1, 0],  # multiple 1s
-        [0, 0, 0, 0],  # no 1s
-        [1, 0, 0, 0],  # matches target
-        [0, 1, 1, 0],  # multiple 1s
-        [1, 1, 1, 1]   # all 1s
-    ])
-    target = torch.tensor([
-        [0, 0, 0, 1],  # one-hot encoded
-        [0, 1, 0, 0],  # one-hot encoded
-        [1, 0, 0, 0],  # one-hot encoded
-        [0, 0, 1, 0],  # one-hot encoded
-        [0, 0, 0, 1]   # one-hot encoded
-    ])
-    print("Test case 6 loss:", loss(output, target).item())
-
-
-if __name__ == "__main__":
-    # test_xor_mismatch_loss()
-    # test_mixtype_xor_loss()
-    test_int_scaling_loss()

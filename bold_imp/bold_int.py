@@ -166,8 +166,6 @@ class LogitsConvNet_v2(nn.Module):
         super(LogitsConvNet_v2, self).__init__()
         self.args = args
         self.bool_layers = nn.ModuleList()
-        # self.activation_layers = nn.ModuleList()  # New module list for activation layers
-        self.spread = args.spread
         if args.dataset == 'cifar10':
             c_in = 1 if args.input_grayscale else 3
             H = W = 32
@@ -259,11 +257,6 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tAcc: {:.2f}%\tFlips: {}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item(), train_acc, batch_flips), end="\n")
-            # print(f'0-grad% {config.hooks}')
-            # for key, value in config.hooks.items():
-            #     if key != 'cur_acc':
-            #         print(f'{key}: {value}')
-            # Log statistics using the new log_stats method
             if isinstance(optimizer_bool, BaseBooleanOptimizer) and optimizer_bool is not None:
                 optimizer_bool.log_stats()
             
@@ -311,12 +304,8 @@ def get_criterion(args):
         raise ValueError("Choose a loss function from --loss-X")
         
 def get_model(args):
-    if args.conv_xnor:
-        return LogitsConvNet(args)
-    elif args.arch_custom:
+    if args.arch_custom:
         return LogitsConvNet_v2(args)
-    elif args.xnor:
-        return LogitsNet(args)
     else:
         raise ValueError("Choose an architecture from --arch-custom")
 
@@ -330,7 +319,6 @@ def get_transform(args):
     if args.input_int and args.dataset == 'cifar10' and args.input_augmentation:
         steps = args.integer_int_steps
         print(f"Augmented; Integer input transformation with {steps} steps")
-        # mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261]
         return transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(20),
@@ -370,8 +358,8 @@ def get_transform(args):
 
 def main():
     args = get_args()
-    if args.all_labels:
-        args.labels = range(10)
+    # if args.all_labels:
+    #     args.labels = range(10)
     config.args = args
 
     
@@ -406,15 +394,15 @@ def main():
                        transform=transform)
         dataset2 = datasets.CIFAR10('../data', train=False,
                        transform=transform)
-        dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
-        dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
+        # dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
+        # dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
     elif args.dataset == 'mnist':
         dataset1 = datasets.MNIST('../data', train=True, download=True,
                         transform=transform)
         dataset2 = datasets.MNIST('../data', train=False,
                         transform=transform)
-        dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
-        dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
+        # dataset1 = filter_dataset_by_labels(dataset1, wanted_labels=args.labels)
+        # dataset2 = filter_dataset_by_labels(dataset2, wanted_labels=args.labels)
     else:
         raise ValueError("Choose a dataset from --dataset mnist or --dataset cifar10")
 
