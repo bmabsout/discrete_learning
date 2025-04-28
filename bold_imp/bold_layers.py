@@ -305,9 +305,9 @@ def test_ANDLinear():
 def get_spread(X):
     if config.args.spread is not None:
         return config.args.spread
-    elif config.args.use_std_spread:
+    elif config.args.spread_std:
         return (X.mean() - X).abs().mean()
-    elif config.args.use_fix_ratio_spread is not None:
+    elif config.args.spread_fix_ratio is not None:
         # return config.args.fix_ratio_spread * (X.mean() - X).abs().mean()
         assert False, "not implemented"
     else:

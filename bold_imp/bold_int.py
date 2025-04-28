@@ -129,7 +129,7 @@ def build_activation_layer(layer_spec, args):
     elif activation_type == 'tanh':
         return nn.Tanh()
     elif activation_type == 'bool':
-        return BoolActvWithThreshDiscrete(0, spread=args.spread, output_range=args.output_range)
+        return BoolActvWithThreshDiscrete(0, spread=args.spread, output_range=args.activation_range)
     else:
         raise ValueError(f"Unsupported activation type: {activation_type}")
     
@@ -306,19 +306,19 @@ def get_criterion(args):
         return F.nll_loss
     elif args.loss_fake_l1:
         print("Use IntL1Loss")
-        return IntL1Loss(activation_range=(args.output_range[0], args.output_range[1]))
+        return IntL1Loss(activation_range=(args.activation_range[0], args.activation_range[1]))
     else:
         raise ValueError("Choose a loss function from --loss-X")
         
 def get_model(args):
     if args.conv_xnor:
         return LogitsConvNet(args)
-    elif args.conv_xnor_v2:
+    elif args.arch_custom:
         return LogitsConvNet_v2(args)
     elif args.xnor:
         return LogitsNet(args)
     else:
-        raise ValueError("Choose an architecture from --conv-xnor or --xnor")
+        raise ValueError("Choose an architecture from --arch-custom")
 
 def get_transform(args):
     if config.args.float16:
@@ -327,8 +327,8 @@ def get_transform(args):
     else:
         compress = lambda x: x
 
-    if args.integer_input and args.dataset == 'cifar10' and args.input_augmentation:
-        steps = args.integer_input_steps
+    if args.input_int and args.dataset == 'cifar10' and args.input_augmentation:
+        steps = args.integer_int_steps
         print(f"Augmented; Integer input transformation with {steps} steps")
         # mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261]
         return transforms.Compose([
@@ -342,8 +342,8 @@ def get_transform(args):
             transforms.Lambda(lambda x: torch.floor(x)),  # Floor to get integer values: [-127, 127]
             transforms.RandomErasing(p=0.75,scale=(0.02, 0.1),value=0.0, inplace=False),
         ])
-    elif args.integer_input:
-        steps = args.integer_input_steps
+    elif args.input_int:
+        steps = args.integer_int_steps
         print(f"Integer input transformation with {steps} steps")
         return transforms.Compose([
             transforms.ToTensor(),  # This handles the (C,H,W) conversion
@@ -430,34 +430,34 @@ def main():
     bool_params = [x for name,x in model.named_parameters() if 'bool_' in name]
     
     # Create the optimizer with the selected configuration
-    if args.use_probabilistic:
-        if args.use_momentum:
-            print(f"Using probabilistic momentum optimizer with flip ratio={args.flip_ratio:.6f}, "
-                  f"momentum={args.momentum}, dampening={args.dampening}")
+    if args.opt_probabilistic:
+        if args.opt_momentum:
+            print(f"Using probabilistic momentum optimizer with flip ratio={args.prob_flip_ratio:.6f}, "
+                  f"momentum={args.opt_momentum_val}, dampening={args.opt_momentum_dampening}")
             optimizer_bool = create_probabilistic_momentum_optimizer(
                 bool_params,
                 lr=args.lr,
-                momentum=args.momentum,
-                dampening=args.dampening,
-                flip_ratio=args.flip_ratio
+                momentum=args.opt_momentum_val,
+                dampening=args.opt_momentum_dampening,
+                flip_ratio=args.prob_flip_ratio
             )
             # optimizer_bool = None
         else:
-            print(f"Using probabilistic optimizer with flip ratio={args.flip_ratio:.6f}")
+            print(f"Using probabilistic optimizer with flip ratio={args.prob_flip_ratio:.6f}")
             optimizer_bool = create_probabilistic_optimizer(
                 bool_params,
                 lr=args.lr,
-                flip_ratio=args.flip_ratio
+                flip_ratio=args.prob_flip_ratio
             )
-    elif args.use_momentum:
+    elif args.opt_momentum:
         print(f"Using momentum optimizer with threshold={args.thresh}, "
-              f"momentum={args.momentum}, dampening={args.dampening}")
+              f"momentum={args.opt_momentum_val}, dampening={args.opt_momentum_dampening}")
         optimizer_bool = create_momentum_optimizer(
             bool_params,
             lr=args.lr,
             thresh=args.thresh,
-            momentum=args.momentum,
-            dampening=args.dampening
+            momentum=args.opt_momentum_val,
+            dampening=args.opt_momentum_dampening
         )
     else:
         print(f"Using vanilla optimizer with threshold={args.thresh}")

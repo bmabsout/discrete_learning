@@ -87,7 +87,7 @@ def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
 
         # flip-ratio decay
         r = epoch // 10
-        cur_flip_ratio_decay = config.args.flip_ratio_decay ** r
+        cur_flip_ratio_decay = config.args.prob_flip_ratio_decay ** r
 
         flip_prob_weights_1 = calculate_flip_probabilities(accumulated_grad, k * flip_ratio * cur_flip_ratio_decay)
         flip_prob_weights_0 = calculate_flip_probabilities(-accumulated_grad, k * flip_ratio * cur_flip_ratio_decay)
