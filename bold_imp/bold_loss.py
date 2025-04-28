@@ -154,7 +154,7 @@ class IntL1LossF(autograd.Function):
     def forward(ctx, X, target, activation_range):
         eff_target = -torch.ones_like(X) * activation_range[1]
         eff_target[torch.arange(X.size(0)), target] = activation_range[1] * len(config.args.labels)
-        loss = torch.sum(torch.abs(X - eff_target))
+        loss = torch.mean(torch.abs(X - eff_target))
 
         ctx.save_for_backward(X, target, eff_target)
         return loss
