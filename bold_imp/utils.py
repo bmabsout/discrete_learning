@@ -241,7 +241,7 @@ def print_important_args(args):
     if args.spread_fix_ratio:
         print(f"  - backward spread fix-ratio: {args.spread_fix_ratio}")
     if args.activation_range:
-        print(f"  - Activation range: {args.activation_range}")
+        print(f"  - Default activation range: {args.activation_range}")
     print()
 
 

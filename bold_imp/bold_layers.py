@@ -6,6 +6,85 @@ from torch.optim.lr_scheduler import StepLR
 from torch import Tensor , autograd
 from typing import Any , List , Optional , Callable
 import config
+
+
+
+################### MARK: BoolActvWithThreshDiscrete ###################
+
+def get_spread(X):
+    if config.args.spread is not None:
+        return config.args.spread
+    elif config.args.spread_std:
+        return (X.mean() - X).abs().mean()
+    elif config.args.spread_fix_ratio is not None:
+        # return config.args.fix_ratio_spread * (X.mean() - X).abs().mean()
+        assert False, "not implemented"
+    else:
+        assert False, "cannot resolve spread parameter"
+
+class ActvFunctionWithThreshDiscrete(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, sup, spread, output_range, id):
+        ctx.save_for_backward(X)
+        ctx.sup = sup
+        ctx.spread = get_spread(X)
+        ctx.output_range = output_range
+        ctx.id = id 
+
+        # std = torch.std(X)
+        # ctx.std = X
+
+        if config.args.float16:
+            S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
+        else:
+            # S = 2 * torch.ge(X,sup // 2).float() - 1.
+            # S = torch.clamp(X, output_range[0], output_range[1])
+            S = X.clamp(output_range[0], output_range[1])
+        return S
+
+    @staticmethod
+    def backward(ctx, Z):
+        X, = ctx.saved_tensors
+        sup = ctx.sup
+        spread = ctx.spread
+
+        # print(torch.std(X))
+
+        dist = torch.abs(X - sup // 2)
+        # Create a mask where distance is less than spread
+        if config.args.float16:
+            G_X = torch.zeros_like(dist).to(torch.float16)
+            G_X[dist < spread] = 1
+        else:
+            G_X = torch.zeros_like(dist)
+            G_X[dist < spread] = 1
+
+        # Calculate number of zero gradients
+        # num_zeros = torch.sum(G_X == 0).item()
+        # Calculate total number of gradients
+        # total_gradients = G_X.numel()
+        # Calculate percentage of zero gradients
+        # zero_grad_percentage = num_zeros / total_gradients
+        # config.hooks[f'0_grad_{ctx.id}'] = (num_zeros, total_gradients, zero_grad_percentage)
+
+        G_X = Z * G_X        
+        return G_X, None, None, None, None
+        
+class BoolActvWithThreshDiscrete(nn.Module):
+    id = 0
+    def __init__(self, sup, spread, output_range = (-1,1)):
+        super().__init__()
+        self.sup = sup
+        self.spread = spread
+        self.output_range = output_range
+        self.id = BoolActvWithThreshDiscrete.id
+        BoolActvWithThreshDiscrete.id += 1
+    def forward(self, X) :
+        return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread, self.output_range, self.id)
+    
+
+
+
 ################### MARK: normal linear layer with -1 and 1 as weights. No bias ###################
 # equivalent to XNORLinear
 
@@ -21,6 +100,8 @@ class XNORLinear(nn.Linear):
             self.weight = nn.Parameter(2.0 * random_values.to(torch.float16) - 1.0)
         else:
             self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
+
+
 
 ################### MARK: normal conv2d layer with -1 and 1 as weights. No bias ###################
 # equivalent to XNORConv2d
@@ -38,6 +119,51 @@ class XNORConv2d(nn.Conv2d):
             self.weight = nn.Parameter(2.0 * random_values.to(torch.float16) - 1.0)
         else:
             self.weight = nn.Parameter(2.0 * random_values.float() - 1.0)
+
+
+################### MARK: XNORLinear with explicit implementation ###################
+
+class XNORFunctionManual(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, W, B, bool_bprop: bool):
+        ctx.save_for_backward(X, W, B)
+        ctx.bool_bprop = bool_bprop
+
+        S = X[:, None, :] * W[None, :, :] 
+        S = S.sum(dim=2)
+        return S
+
+    @staticmethod
+    def backward(ctx, Z):
+        if ctx.bool_bprop:
+            raise NotImplementedError("Boolean backprop is not implemented for XNORLinear")
+
+        assert torch.all(torch.eq(Z, torch.round(Z))), f"Z must contain only integer values, but got {Z}"
+        X, W, _ = ctx.saved_tensors
+
+        G_X = Z.mm(W)
+        G_W = Z.t().mm(X)
+
+        return G_X, G_W, None, None
+        
+class XNORLinearManual(nn.Linear):
+    def __init__(self, in_features : int , out_features : int , bool_bprop : bool = False , ** kwargs ):
+        super(XNORLinearManual, self).__init__(in_features ,out_features , ** kwargs )
+        self.bool_bprop = bool_bprop
+  
+    def reset_parameters(self):
+        # initialize the weights with either 1.0 or -1.0
+        random_values = torch.randint(0, 2, self.weight.shape)
+        self.weight = nn.Parameter(2 * random_values.float() - 1)
+  
+        if self.bias is not None:
+            self.bias = nn.Parameter(2 * torch.randint(0, 2, (self.out_features,)).float() - 1)
+  
+    def forward (self, X) :
+        return XNORFunctionManual.apply(X, self.weight , self.bias , self.bool_bprop)
+
+
+
 
 ################### MARK: XORLinear ###################
 
@@ -159,50 +285,6 @@ class XORLinear(nn.Linear):
         return XORFunction.apply(X, self.weight , self.bias , self.bool_bprop)
 
 
-
-
-################### MARK: XNORLinear with explicit implementation ###################
-
-class XNORFunctionManual(autograd.Function):
-    @staticmethod
-    def forward(ctx, X, W, B, bool_bprop: bool):
-        ctx.save_for_backward(X, W, B)
-        ctx.bool_bprop = bool_bprop
-
-        S = X[:, None, :] * W[None, :, :] 
-        S = S.sum(dim=2)
-        return S
-
-    @staticmethod
-    def backward(ctx, Z):
-        if ctx.bool_bprop:
-            raise NotImplementedError("Boolean backprop is not implemented for XNORLinear")
-
-        assert torch.all(torch.eq(Z, torch.round(Z))), f"Z must contain only integer values, but got {Z}"
-        X, W, _ = ctx.saved_tensors
-
-        G_X = Z.mm(W)
-        G_W = Z.t().mm(X)
-
-        return G_X, G_W, None, None
-        
-class XNORLinearManual(nn.Linear):
-    def __init__(self, in_features : int , out_features : int , bool_bprop : bool = False , ** kwargs ):
-        super(XNORLinearManual, self).__init__(in_features ,out_features , ** kwargs )
-        self.bool_bprop = bool_bprop
-  
-    def reset_parameters(self):
-        # initialize the weights with either 1.0 or -1.0
-        random_values = torch.randint(0, 2, self.weight.shape)
-        self.weight = nn.Parameter(2 * random_values.float() - 1)
-  
-        if self.bias is not None:
-            self.bias = nn.Parameter(2 * torch.randint(0, 2, (self.out_features,)).float() - 1)
-  
-    def forward (self, X) :
-        return XNORFunctionManual.apply(X, self.weight , self.bias , self.bool_bprop)
-
-
 ################### MARK: ANDLinear ###################
 
 # not working, might be some bug in the implementation?
@@ -300,78 +382,7 @@ def test_ANDLinear():
     print("param grads: \n", layer.weight.grad)
 
 
-################### MARK: BoolActvWithThreshDiscrete ###################
 
-def get_spread(X):
-    if config.args.spread is not None:
-        return config.args.spread
-    elif config.args.spread_std:
-        return (X.mean() - X).abs().mean()
-    elif config.args.spread_fix_ratio is not None:
-        # return config.args.fix_ratio_spread * (X.mean() - X).abs().mean()
-        assert False, "not implemented"
-    else:
-        assert False, "cannot resolve spread parameter"
-
-class ActvFunctionWithThreshDiscrete(autograd.Function):
-    @staticmethod
-    def forward(ctx, X, sup, spread, output_range, id):
-        ctx.save_for_backward(X)
-        ctx.sup = sup
-        ctx.spread = get_spread(X)
-        ctx.output_range = output_range
-        ctx.id = id 
-
-        # std = torch.std(X)
-        # ctx.std = X
-
-        if config.args.float16:
-            S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
-        else:
-            # S = 2 * torch.ge(X,sup // 2).float() - 1.
-            # S = torch.clamp(X, output_range[0], output_range[1])
-            S = X.clamp(output_range[0], output_range[1])
-        return S
-
-    @staticmethod
-    def backward(ctx, Z):
-        X, = ctx.saved_tensors
-        sup = ctx.sup
-        spread = ctx.spread
-
-        # print(torch.std(X))
-
-        dist = torch.abs(X - sup // 2)
-        # Create a mask where distance is less than spread
-        if config.args.float16:
-            G_X = torch.zeros_like(dist).to(torch.float16)
-            G_X[dist < spread] = 1
-        else:
-            G_X = torch.zeros_like(dist)
-            G_X[dist < spread] = 1
-
-        # Calculate number of zero gradients
-        # num_zeros = torch.sum(G_X == 0).item()
-        # Calculate total number of gradients
-        # total_gradients = G_X.numel()
-        # Calculate percentage of zero gradients
-        # zero_grad_percentage = num_zeros / total_gradients
-        # config.hooks[f'0_grad_{ctx.id}'] = (num_zeros, total_gradients, zero_grad_percentage)
-
-        G_X = Z * G_X        
-        return G_X, None, None, None, None
-        
-class BoolActvWithThreshDiscrete(nn.Module):
-    id = 0
-    def __init__(self, sup, spread, output_range = (-1,1)):
-        super().__init__()
-        self.sup = sup
-        self.spread = spread
-        self.output_range = output_range
-        self.id = BoolActvWithThreshDiscrete.id
-        BoolActvWithThreshDiscrete.id += 1
-    def forward(self, X) :
-        return ActvFunctionWithThreshDiscrete.apply(X, self.sup, self.spread, self.output_range, self.id)
 
 
 ################### MARK: BoolActv ###################

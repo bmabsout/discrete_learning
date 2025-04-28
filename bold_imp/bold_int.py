@@ -70,10 +70,30 @@ def parse_arch(arch):
         elif layer_type == 'activation' or layer_type == 'a':
             # Parse activation layer: type
             activation_type = parts[1]
-            layers.append({
-                'type': 'activation',
-                'activation_type': activation_type
-            })
+            if activation_type == 'bool' and len(parts) > 3:
+                # Handle activation-bool-(low)-(high) format
+                # Extract the range values, handling negative numbers
+                low_str = parts[2].strip('()')
+                high_str = parts[3].strip('()')
+                
+                # Convert 'neg' to '-' for negative numbers
+                low_str = low_str.replace('neg', '-')
+                high_str = high_str.replace('neg', '-')
+                
+                low = float(low_str)
+                high = float(high_str)
+                
+                layers.append({
+                    'type': 'activation',
+                    'activation_type': activation_type,
+                    'range': (low, high)
+                })
+            else:
+                # Handle normal activation-bool format
+                layers.append({
+                    'type': 'activation',
+                    'activation_type': activation_type
+                })
         elif layer_type == 'pool' or layer_type == 'p':
             # Parse pooling layer: type-KxK-S-P
             # Example: pool-max-2x2-2-0 or pool-avg-3x3-1-1
@@ -129,7 +149,13 @@ def build_activation_layer(layer_spec, args):
     elif activation_type == 'tanh':
         return nn.Tanh()
     elif activation_type == 'bool':
-        return BoolActvWithThreshDiscrete(0, spread=args.spread, output_range=args.activation_range)
+        # Check if custom range is provided
+        if 'range' in layer_spec:
+            low, high = layer_spec['range']
+            return BoolActvWithThreshDiscrete(0, spread=args.spread, output_range=(low, high))
+        else:
+            # Use default range from args
+            return BoolActvWithThreshDiscrete(0, spread=args.spread, output_range=args.activation_range)
     else:
         raise ValueError(f"Unsupported activation type: {activation_type}")
     
@@ -161,9 +187,9 @@ def build_pool_layer(layer_spec, c_in, H, W):
     output_dim = get_output_dim(H, padding, 1, kernel_size[0], stride)
     return layer, output_dim
 
-class LogitsConvNet_v2(nn.Module):
+class CustomIntNet(nn.Module):
     def __init__(self, args):
-        super(LogitsConvNet_v2, self).__init__()
+        super(CustomIntNet, self).__init__()
         self.args = args
         self.bool_layers = nn.ModuleList()
         if args.dataset == 'cifar10':
@@ -301,7 +327,7 @@ def get_criterion(args):
         
 def get_model(args):
     if args.arch_custom:
-        return LogitsConvNet_v2(args)
+        return CustomIntNet(args)
     else:
         raise ValueError("Choose an architecture from --arch-custom")
 
