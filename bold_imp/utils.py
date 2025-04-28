@@ -113,6 +113,8 @@ def get_args():
                         help='Alpha for integer scaling loss')
     loss_group.add_argument('--loss-int-l1', action='store_true', default=False,
                             help='Use int L1 loss. This one requires the last layer to be activation with range.')
+    parser.add_argument('--loss-int-l1-scale', nargs=2, type=float, default=(-1.0, 1.0),
+                        help='Scale range for int L1 loss as two floats (default: -1.0 1.0)')
     return parser.parse_args()
 
 def filter_dataset_by_labels(dataset, wanted_labels, debug=False):

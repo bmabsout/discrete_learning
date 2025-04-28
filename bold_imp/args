@@ -1,12 +1,13 @@
 --dataset mnist 
 --arch-custom 
 --opt-momentum 
---loss-int-l1 
---epochs 100 
---input-int 
---spread-std
---activation-range -1 1
 --opt-probabilistic 
+--input-int 
+--loss-int-l1 
+--spread-std
+--epochs 100 
+--loss-int-l1-scale -50.0 50.0
+--activation-range -1 1
 --prob-flip-ratio-decay-epochs 5 
 --prob-flip-ratio-batch-acc-aware 0.3 
 --batch-size 256 

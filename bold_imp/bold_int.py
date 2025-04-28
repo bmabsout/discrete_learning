@@ -321,7 +321,7 @@ def get_criterion(args):
     elif args.loss_cross_entropy:
         return F.nll_loss
     elif args.loss_int_l1:
-        return IntL1Loss(activation_range=(args.activation_range[0], args.activation_range[1]))
+        return IntL1Loss(activation_range=(args.loss_int_l1_scale[0], args.loss_int_l1_scale[1]))
     else:
         raise ValueError("Choose a loss function from --loss-X")
         
