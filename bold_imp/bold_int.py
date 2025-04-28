@@ -5,7 +5,7 @@ import torch.optim as optim
 import config
 from torchvision import datasets, transforms
 from typing import Any , List , Optional , Callable
-from utils import get_args, filter_dataset_by_labels, get_output_dim
+from utils import *
 
 # Set print options to show full tensor contents
 torch.set_printoptions(profile="full")
@@ -289,16 +289,12 @@ def step_grads_for(opts):
 
 def get_criterion(args):
     if args.loss_naive:
-        print("Use MixtypeXORLoss")
         return MixtypeXORLoss()
     elif args.loss_int_scaling:
-        print(f"Use IntScalingLoss with alpha={args.loss_int_scaling_alpha}")
         return IntScalingLoss(alpha=args.loss_int_scaling_alpha)
     elif args.loss_cross_entropy:
-        print("Use CrossEntropyLoss")
         return F.nll_loss
-    elif args.loss_fake_l1:
-        print("Use IntL1Loss")
+    elif args.loss_int_l1:
         return IntL1Loss(activation_range=(args.activation_range[0], args.activation_range[1]))
     else:
         raise ValueError("Choose a loss function from --loss-X")
@@ -311,14 +307,12 @@ def get_model(args):
 
 def get_transform(args):
     if config.args.float16:
-        print("Using float16")
         compress = lambda x: x.to(torch.float16)
     else:
         compress = lambda x: x
 
     if args.input_int and args.dataset == 'cifar10' and args.input_augmentation:
         steps = args.integer_int_steps
-        print(f"Augmented; Integer input transformation with {steps} steps")
         return transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(20),
@@ -332,7 +326,6 @@ def get_transform(args):
         ])
     elif args.input_int:
         steps = args.integer_int_steps
-        print(f"Integer input transformation with {steps} steps")
         return transforms.Compose([
             transforms.ToTensor(),  # This handles the (C,H,W) conversion
             transforms.Lambda(lambda x: x * steps),  # Convert to [0,255]
@@ -342,7 +335,6 @@ def get_transform(args):
         ])
     elif args.input_grayscale:
         steps = args.input_grayscale_steps
-        print(f"Using grayscale input transformation with {steps} steps")
         return transforms.Compose([
             transforms.Grayscale(num_output_channels=1),
             transforms.ToTensor(),
@@ -358,13 +350,8 @@ def get_transform(args):
 
 def main():
     args = get_args()
-    # if args.all_labels:
-    #     args.labels = range(10)
+    print_important_args(args)
     config.args = args
-
-    
-    print(args)
-
 
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     use_mps = not args.no_mps and torch.backends.mps.is_available()
@@ -420,8 +407,6 @@ def main():
     # Create the optimizer with the selected configuration
     if args.opt_probabilistic:
         if args.opt_momentum:
-            print(f"Using probabilistic momentum optimizer with flip ratio={args.prob_flip_ratio:.6f}, "
-                  f"momentum={args.opt_momentum_val}, dampening={args.opt_momentum_dampening}")
             optimizer_bool = create_probabilistic_momentum_optimizer(
                 bool_params,
                 lr=args.lr,
@@ -431,15 +416,12 @@ def main():
             )
             # optimizer_bool = None
         else:
-            print(f"Using probabilistic optimizer with flip ratio={args.prob_flip_ratio:.6f}")
             optimizer_bool = create_probabilistic_optimizer(
                 bool_params,
                 lr=args.lr,
                 flip_ratio=args.prob_flip_ratio
             )
     elif args.opt_momentum:
-        print(f"Using momentum optimizer with threshold={args.thresh}, "
-              f"momentum={args.opt_momentum_val}, dampening={args.opt_momentum_dampening}")
         optimizer_bool = create_momentum_optimizer(
             bool_params,
             lr=args.lr,
@@ -448,7 +430,6 @@ def main():
             dampening=args.opt_momentum_dampening
         )
     else:
-        print(f"Using vanilla optimizer with threshold={args.thresh}")
         optimizer_bool = create_vanilla_optimizer(
             bool_params,
             lr=args.lr,

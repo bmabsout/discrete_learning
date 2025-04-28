@@ -4,64 +4,38 @@ import config
 from torch import Tensor , autograd
 from torch.nn import functional as F
 
-class BoolLoss(autograd.Function):
-    @staticmethod
-    def forward(ctx, pred, target):
-        ctx.save_for_backward(pred, target)
-        loss = torch.sum(torch.abs(pred - target)).float()
-        return loss
+# ---------------------------------- MARK: IntL1Loss (Recommended) ----------------------------------
 
-    @staticmethod 
-    def backward(ctx, grad_output):
-        pred, target = ctx.saved_tensors
-        grad_pred = torch.logical_not(target) 
-        return grad_pred, None
-
-class BooleanLoss(nn.Module):
-    def __init__(self):
+class IntL1Loss(nn.Module):
+    def __init__(self, activation_range: tuple[int, int]):
         super().__init__()
-        
-    def forward(self, pred, target):
-        return BoolLoss.apply(pred, target)
+        self.activation_range = activation_range
 
-class XORMismatchLoss(nn.Module):
-    """
-    For a multi-class classification, the loss count the number of mismatches of the encoding.
-    Input:
-        output: [batch_size, num_classes]
-        target: [batch_size]
-            
-        the value type for output is boolean, represented by 0 and 1. The output is not necessarily be one-hot encoded.
-        which means the output might fail to produce the top-1 prediction. 
-        
-        target contains the indices of the correct classes.
-
-    Output:
-        loss: int. The number of mismatches encoding across the batch.
-    """
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, output, target):
-        return XORMismatchLossF.apply(output, target)
-
-class XORMismatchLossF(autograd.Function):
+    def forward(self, X, target):
+        return IntL1LossF.apply(X, target, self.activation_range)
+    
+class IntL1LossF(autograd.Function):
     @staticmethod
-    def forward(ctx, X, target):
-        ctx.save_for_backward(X, target)
-        # Convert target indices to one-hot for comparison
-        target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
-        loss = torch.sum(~torch.all(X == target_onehot, dim=1)).float()
-        return loss
+    def forward(ctx, X, target, activation_range):
+        eff_target = -torch.ones_like(X) * activation_range[1]
+        eff_target[torch.arange(X.size(0)), target] = activation_range[1] * X.size(1)
+        loss = torch.mean(torch.abs(X - eff_target))
 
+        ctx.save_for_backward(X, target, eff_target)
+        return loss
+    
     @staticmethod
     def backward(ctx, grad_output):
-        X, target = ctx.saved_tensors
-        # Convert target indices to one-hot for gradient computation
-        target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
-        return torch.logical_not(target_onehot) * grad_output, None
+        X, target, eff_target = ctx.saved_tensors
+        # grad_X = eff_target - X
+        grad_X = X - eff_target
+        return grad_X * grad_output, None, None
+    
 
-# ---------------------------------- MARK: MixtypeXORLoss ----------------------------------
+
+
+
+# ------------------------- MARK: MixtypeXORLoss (Loss value is not meaningful, but good performance) ----------------
 
 class MixtypeXORLoss(nn.Module):
     """
@@ -131,32 +105,71 @@ class MixtypeXORLossF(autograd.Function):
         # because True means the direction of change is the same.
         return grad_X * grad_output, None
 
-# ---------------------------------- MARK: IntL1Loss (Recommended) ----------------------------------
 
-class IntL1Loss(nn.Module):
-    def __init__(self, activation_range: tuple[int, int]):
-        super().__init__()
-        self.activation_range = activation_range
-
-    def forward(self, X, target):
-        return IntL1LossF.apply(X, target, self.activation_range)
     
-class IntL1LossF(autograd.Function):
+
+# ---------------------------------- MARK: BooleanLoss ----------------------------------
+
+class BoolLoss(autograd.Function):
     @staticmethod
-    def forward(ctx, X, target, activation_range):
-        eff_target = -torch.ones_like(X) * activation_range[1]
-        eff_target[torch.arange(X.size(0)), target] = activation_range[1] * X.size(1)
-        loss = torch.mean(torch.abs(X - eff_target))
-
-        ctx.save_for_backward(X, target, eff_target)
+    def forward(ctx, pred, target):
+        ctx.save_for_backward(pred, target)
+        loss = torch.sum(torch.abs(pred - target)).float()
         return loss
-    
+
+    @staticmethod 
+    def backward(ctx, grad_output):
+        pred, target = ctx.saved_tensors
+        grad_pred = torch.logical_not(target) 
+        return grad_pred, None
+
+class BooleanLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self, pred, target):
+        return BoolLoss.apply(pred, target)
+
+# ---------------------------------- MARK: XORMismatchLoss ----------------------------------
+
+class XORMismatchLoss(nn.Module):
+    """
+    For a multi-class classification, the loss count the number of mismatches of the encoding.
+    Input:
+        output: [batch_size, num_classes]
+        target: [batch_size]
+            
+        the value type for output is boolean, represented by 0 and 1. The output is not necessarily be one-hot encoded.
+        which means the output might fail to produce the top-1 prediction. 
+        
+        target contains the indices of the correct classes.
+
+    Output:
+        loss: int. The number of mismatches encoding across the batch.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, output, target):
+        return XORMismatchLossF.apply(output, target)
+
+class XORMismatchLossF(autograd.Function):
+    @staticmethod
+    def forward(ctx, X, target):
+        ctx.save_for_backward(X, target)
+        # Convert target indices to one-hot for comparison
+        target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
+        loss = torch.sum(~torch.all(X == target_onehot, dim=1)).float()
+        return loss
+
     @staticmethod
     def backward(ctx, grad_output):
-        X, target, eff_target = ctx.saved_tensors
-        # grad_X = eff_target - X
-        grad_X = X - eff_target
-        return grad_X * grad_output, None, None
+        X, target = ctx.saved_tensors
+        # Convert target indices to one-hot for gradient computation
+        target_onehot = F.one_hot(target, num_classes=X.size(1)).float()
+        return torch.logical_not(target_onehot) * grad_output, None
+
+
 
 # ---------------------------------- MARK: IntScalingLoss ----------------------------------
 

@@ -51,8 +51,8 @@ def get_args():
     parser.add_argument('--spread-fix-ratio', type=float, default=None,
                         help='Use fixed ratio of some parameters of linear layer as spread base')
     
-    parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
-                        help='List of hidden layer sizes (default: [64])')
+    # parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
+    #                     help='List of hidden layer sizes (default: [64])')
     parser.add_argument('--activation-range', type=int, nargs='+', default=[-1,1],
                         help='List of output range (default: [-1,1])')
 
@@ -107,8 +107,8 @@ def get_args():
                         help='Use cross entropy loss')
     parser.add_argument('--loss-int-scaling-alpha', type=int, default=1000, metavar='N',
                         help='Alpha for integer scaling loss')
-    loss_group.add_argument('--loss-fake-l1', action='store_true', default=False,
-                            help='Use fake L1 loss. This one requires the last layer to be activation with range.')
+    loss_group.add_argument('--loss-int-l1', action='store_true', default=False,
+                            help='Use int L1 loss. This one requires the last layer to be activation with range.')
     return parser.parse_args()
 
 def filter_dataset_by_labels(dataset, wanted_labels, debug=False):
@@ -183,10 +183,69 @@ def get_tensor_stats(tensor, counter=0):
         get_tensor_stats.counter -= 1  # Decrement counter
         print(stats)
 
+def print_important_args(args):
+    # Meta information
+    print("Meta information:")
+    print(f"  - Dataset: {args.dataset}")
+    print(f"  - Seed: {args.seed}")
+    print(f"  - Batch size: {args.batch_size}")
+    print(f"  - Test batch size: {args.test_batch_size}")
+    print()
+    
+    # input transformation
+    print("Input configuration:")
+    if args.input_int:
+        print(f"  - Integer input transformation")
+        print(f"    - Steps: {args.integer_int_steps}")
+    elif args.input_grayscale:
+        print(f"  - Grayscale input transformation")
+        print(f"    - Steps: {args.input_grayscale_steps}")
+    else:
+        print(f"  - No input transformation")
+
+    print(f"  - Input augmentation: {args.input_augmentation}")
+    print()
+
+    # architecture
+    print("Architecture:")
+    print()
+    if args.arch_custom:
+        for layer in args.arch.split(','):
+            print(f"{layer}")
+    print()
+    # optimizer
+    print("Optimizer:")
+    print(f"  - Momentum: {args.opt_momentum}")
+    print(f"    - value: {args.opt_momentum_val}")
+    print(f"    - Dampening: {args.opt_momentum_dampening}")
+    print(f"  - Probabilistic optimizer: {args.opt_probabilistic}")
+    print(f"    - Flip ratio: {args.prob_flip_ratio}")
+    print(f"    - Flip ratio decay: {args.prob_flip_ratio_decay}")
+    print()
+    # loss function
+    print("Loss function:")
+    if args.loss_int_l1:
+        print(f"  - Int L1 loss")
+    elif args.loss_int_scaling:
+        print(f"  - Integer scaling loss")
+    elif args.loss_cross_entropy:
+        print(f"  - Cross entropy loss")
+    print()
+
+    # activation function
+    print("Bool Activation function config:")
+    if args.spread:
+        print(f"  - fixed backward spread: {args.spread}")
+    if args.spread_std:
+        print(f"  - backward spread via input std: {args.spread_std}")
+    if args.spread_fix_ratio:
+        print(f"  - backward spread fix-ratio: {args.spread_fix_ratio}")
+    if args.activation_range:
+        print(f"  - Activation range: {args.activation_range}")
+    print()
 
 
 if __name__ == "__main__":
     args = get_args()
-    # print(args.labels)
  
 
