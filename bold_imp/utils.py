@@ -52,21 +52,21 @@ def get_args():
     # Model arguments
     parser.add_argument('--spread', type=int, default=None, metavar='N',
                         help='Spread for the activation function')
-    parser.add_argument('--use-std-spread', action='store_true', default=False,
+    parser.add_argument('--spread-std', action='store_true', default=False,
                         help='Use standard deviation of X as base to calculate spread for the activation function')
-    parser.add_argument('--use-fix-ratio-spread', type=float, default=None,
+    parser.add_argument('--spread-fix-ratio', type=float, default=None,
                         help='Use fixed ratio of some parameters of linear layer as spread base')
     
     parser.add_argument('--layer-sizes', type=int, nargs='+', default=[64],
                         help='List of hidden layer sizes (default: [64])')
-    parser.add_argument('--output-range', type=int, nargs='+', default=[-1,1],
+    parser.add_argument('--activation-range', type=int, nargs='+', default=[-1,1],
                         help='List of output range (default: [-1,1])')
 
     # Input transformation arguments
     transform_group = parser.add_argument_group('Input Transformation Options')
-    transform_group.add_argument('--integer-input', action='store_true', default=False,
+    transform_group.add_argument('--input-int', action='store_true', default=False,
                         help='Use integer input transformation (centered around zero)')
-    transform_group.add_argument('--integer-input-steps', type=int, default=255,
+    transform_group.add_argument('--integer-int-steps', type=int, default=255,
                         help='Number of steps for integer input transformation (default: 255)')
     transform_group.add_argument('--input-grayscale', action='store_true', default=False,
                         help='Use grayscale input transformation')
@@ -79,7 +79,7 @@ def get_args():
     architecture_group = parser.add_argument_group('Architecture Selection (choose one)')
     architecture_group.add_argument('--conv-xnor', action='store_true', default=False,
                         help='Use convolutional network')
-    architecture_group.add_argument('--conv-xnor-v2', action='store_true', default=False,
+    architecture_group.add_argument('--arch-custom', action='store_true', default=False,
                         help='Use convolutional network v2')
     architecture_group.add_argument('--xnor', action='store_true', default=False,
                         help='Use XNOR network')
@@ -88,23 +88,23 @@ def get_args():
 
     # Optimizer selection arguments - mutually exclusive
     optimizer_group = parser.add_argument_group('Optimizer Selection (choose one)')
-    optimizer_group.add_argument('--use-momentum', action='store_true', default=False,
+    optimizer_group.add_argument('--opt-momentum', action='store_true', default=False,
                         help='Use momentum-based boolean optimizer')
-    optimizer_group.add_argument('--use-probabilistic', action='store_true', default=False,
+    optimizer_group.add_argument('--opt-probabilistic', action='store_true', default=False,
                         help='Use probabilistic boolean optimizer (linear flip probability from 0 to threshold)')
     
     # Momentum parameters
-    momentum_group = parser.add_argument_group('Momentum Parameters (used with --use-momentum)')
-    momentum_group.add_argument('--momentum', type=float, default=0.9,
+    momentum_group = parser.add_argument_group('Momentum Parameters (used with --opt-momentum)')
+    momentum_group.add_argument('--opt-momentum-val', type=float, default=0.9,
                         help='Momentum factor (default: 0.9)')
-    momentum_group.add_argument('--dampening', type=float, default=0.0,
+    momentum_group.add_argument('--opt-momentum-dampening', type=float, default=0.0,
                         help='Dampening factor for momentum (default: 0.0)')
                         
     # Probabilistic parameters
-    prob_group = parser.add_argument_group('Probabilistic Parameters (used with --use-probabilistic)')
-    prob_group.add_argument('--flip-ratio', type=float, default=0.001,
+    prob_group = parser.add_argument_group('Probabilistic Parameters (used with --opt-probabilistic)')
+    prob_group.add_argument('--prob-flip-ratio', type=float, default=0.001,
                         help='Target percentage of parameters to flip per step (default: 0.001, i.e., 0.1%%)')
-    prob_group.add_argument('--flip-ratio-decay', type=float, default=0.9,
+    prob_group.add_argument('--prob-flip-ratio-decay', type=float, default=0.9,
                         help='Decay rate for flip ratio per epoch (default: 0.9)')
 
     # Loss function arguments
