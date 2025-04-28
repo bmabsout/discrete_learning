@@ -1,0 +1,6 @@
+.DS_Store
+.vscode
+__pycache__
+data
+*.zip
+bold_imp/archives

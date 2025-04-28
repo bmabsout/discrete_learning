@@ -45,7 +45,7 @@ def parse_arch(arch):
         parts = layer_spec.split('-')
         layer_type = parts[0]
         
-        if layer_type == 'conv':
+        if layer_type == 'conv' or layer_type == 'c':
             # Parse conv layer: CxKxK-S-P
             channels, *kernel = parts[1].split('x')
             stride = int(parts[2])
@@ -59,7 +59,7 @@ def parse_arch(arch):
                 'padding': padding
             })
             
-        elif layer_type == 'linear':
+        elif layer_type == 'linear' or layer_type == 'l':
             # Parse linear layer: N
             out_features = int(parts[1])
             layers.append({
@@ -67,14 +67,14 @@ def parse_arch(arch):
                 'out_features': out_features
             })
             
-        elif layer_type == 'activation':
+        elif layer_type == 'activation' or layer_type == 'a':
             # Parse activation layer: type
             activation_type = parts[1]
             layers.append({
                 'type': 'activation',
                 'activation_type': activation_type
             })
-        elif layer_type == 'pool':
+        elif layer_type == 'pool' or layer_type == 'p':
             # Parse pooling layer: type-KxK-S-P
             # Example: pool-max-2x2-2-0 or pool-avg-3x3-1-1
             pool_type = parts[1]
