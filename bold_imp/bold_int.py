@@ -70,8 +70,8 @@ def parse_arch(arch):
         elif layer_type == 'activation' or layer_type == 'a':
             # Parse activation layer: type
             activation_type = parts[1]
-            if activation_type == 'bool' and len(parts) > 3:
-                # Handle activation-bool-(low)-(high) format
+            if activation_type == 'int' and len(parts) > 3:
+                # Handle activation-int-(low)-(high) format
                 # Extract the range values, handling negative numbers
                 low_str = parts[2].strip('()')
                 high_str = parts[3].strip('()')
@@ -89,7 +89,7 @@ def parse_arch(arch):
                     'range': (low, high)
                 })
             else:
-                # Handle normal activation-bool format
+                # Handle normal activation-int format
                 layers.append({
                     'type': 'activation',
                     'activation_type': activation_type
@@ -148,7 +148,7 @@ def build_activation_layer(layer_spec, args):
         return nn.Sigmoid()
     elif activation_type == 'tanh':
         return nn.Tanh()
-    elif activation_type == 'bool':
+    elif activation_type == 'int':
         # Check if custom range is provided
         if 'range' in layer_spec:
             low, high = layer_spec['range']
