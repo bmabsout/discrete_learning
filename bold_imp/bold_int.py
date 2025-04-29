@@ -318,9 +318,9 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     accs = []
     
     # Initialize visualizer on first epoch
-    if epoch == 1:
-        if not hasattr(train, 'visualizer'):
-            train.visualizer = AccuracyVisualizer()
+    # if epoch == 1:
+    #     if not hasattr(train, 'visualizer'):
+    #         train.visualizer = AccuracyVisualizer()
     
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
@@ -338,7 +338,7 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
         batch_acc = num_correct / num_total
         
         # Update the visualization with every batch
-        train.visualizer.update(batch_idx, batch_acc, epoch)
+        # train.visualizer.update(batch_idx, batch_acc, epoch)
         
         if optimizer is not None:
             optimizer.step()
