@@ -149,12 +149,20 @@ class BaseBooleanOptimizer(torch.optim.Optimizer):
         actual_ratio = self._total_flips / self._total_params
         target_ratio = getattr(self.flip_decider, 'flip_ratio', None)
         
+        # Calculate width needed based on total_params
+        width = len(str(self._total_params))
+        
         if target_ratio is not None:
-            print(f"  Flip stats: {self._total_flips}/{self._total_params} parameters "
-                  f"({actual_ratio*100:.4f}%), target was {target_ratio*100:.4f}%", end="")
+            print(f"({actual_ratio*100:.4f}%), target {target_ratio*100:.4f}%", end="")
         else:
-            print(f"  Flip stats: {self._total_flips}/{self._total_params} parameters "
-                  f"({actual_ratio*100:.4f}%)", end="")
+            print(f"({actual_ratio*100:.4f}%)", end="")
+
+        # if target_ratio is not None:
+        #     print(f"  Flip stats: {self._total_flips:>{width}}/{self._total_params} parameters "
+        #           f"({actual_ratio*100:.4f}%), target was {target_ratio*100:.4f}%", end="")
+        # else:
+        #     print(f"  Flip stats: {self._total_flips:>{width}}/{self._total_params} parameters "
+        #           f"({actual_ratio*100:.4f}%)", end="")
         
         self._total_flips = 0
         self._total_params = 0

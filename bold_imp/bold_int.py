@@ -317,6 +317,9 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     criterion = get_criterion(args)
     accs = []
     
+    # Calculate the width needed for the largest value (total dataset size)
+    progress_width = len(str(len(train_loader.dataset)))
+    
     # Initialize visualizer on first epoch
     # if epoch == 1:
     #     if not hasattr(train, 'visualizer'):
@@ -354,17 +357,24 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
             train_acc = 100. * pred.eq(target).sum().item() / len(target)
             accs.append(train_acc / 100.)
             print()
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tAcc: {:.2f}%\tFlips: {}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item(), train_acc, batch_flips), end="\n")
+            print('Epoch: {} [{:>{width}}/{} ({:.0f}%)]\tLoss: {:.6f}\tAcc: {:.2f}%\tFlips: {}'.format(
+                epoch, 
+                batch_idx * len(data), 
+                len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), 
+                loss.item(), 
+                train_acc, 
+                batch_flips,
+                width=progress_width), 
+                end="")
             if isinstance(optimizer_bool, BaseBooleanOptimizer) and optimizer_bool is not None:
                 optimizer_bool.log_stats()
             
             if args.dry_run:
                 break
-            print()
-    print(f'\nAverage accuracy: {sum(accs) / len(accs):.4f}')
-    print('\nTotal flips in epoch {}: {}'.format(epoch, total_flips))
+            
+    print(f'\nAv. Acc: {sum(accs) / len(accs):.4f}')
+    print('\nFlips in epoch {}: {}'.format(epoch, total_flips))
 
 def test(args, model, device, test_loader):
     model.eval()
