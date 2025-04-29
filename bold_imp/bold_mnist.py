@@ -19,17 +19,18 @@ from bold_loss import XORMismatchLoss, BooleanLoss
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
-        self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=10)
-        self.bool_fc2 = XORLinear(64, 1,bool_bprop=True)  
-        self.actv2 = BoolActvWithThreshDiscrete(64, spread=10)
+        # self.bool_fc1 = XORLinear(28*28, 64,bool_bprop=False)
+        # self.actv1 = BoolActvWithThreshDiscrete(28*28, spread=10)
+        # self.bool_fc2 = XORLinear(64, 1,bool_bprop=True)  
+        # self.actv2 = BoolActvWithThreshDiscrete(64, spread=10)
+        self.fc1 = nn.Linear(28*28, 64)
+        self.fc2 = nn.Linear(64, 1)
 
     def forward(self, x):
         x = x.reshape(-1,28*28)
-        x = self.bool_fc1(x)
-        x = self.actv1(x)
-        x = self.bool_fc2(x)
-        x = self.actv2(x)
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.fc2(x)
         return x
 
 
@@ -37,15 +38,16 @@ class Net(nn.Module):
 def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     model.train()
     total_flips = 0
-    criterion = BooleanLoss()
+    # criterion = BooleanLoss()
+    criterion = nn.CrossEntropyLoss()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
-        data=torch.gt(data,0.5).float()
+        # data=torch.gt(data,0.5).float()
         
         if optimizer is not None:
             optimizer.zero_grad()
-        if optimizer_bool is not None:
-            optimizer_bool.zero_grad()
+        # if optimizer_bool is not None:
+        #     optimizer_bool.zero_grad()
         
         output = model(data)
         loss = criterion(output.squeeze(1), target)
@@ -53,13 +55,13 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
         
         if optimizer is not None:
             optimizer.step()
-        if optimizer_bool is not None:
-            optimizer_bool.step()
-            # Get the number of flips from the boolean optimizer
-            batch_flips = optimizer_bool.nb_flips
-            total_flips += batch_flips
-        else:
-            batch_flips = 0
+        # if optimizer_bool is not None:
+        #     optimizer_bool.step()
+        #     # Get the number of flips from the boolean optimizer
+        #     batch_flips = optimizer_bool.nb_flips
+        #     total_flips += batch_flips
+        # else:
+        #     batch_flips = 0
         
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tFlips: {}'.format(
@@ -67,8 +69,8 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
                 100. * batch_idx / len(train_loader), loss.item(), batch_flips))
             
             # Log statistics using the new log_stats method
-            if isinstance(optimizer_bool, BaseBooleanOptimizer) and optimizer_bool is not None:
-                optimizer_bool.log_stats()
+            # if isinstance(optimizer_bool, BaseBooleanOptimizer) and optimizer_bool is not None:
+            #     optimizer_bool.log_stats()
                           
             if args.dry_run:
                 break
@@ -81,7 +83,7 @@ def test(model, device, test_loader):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            data=torch.gt(data,0.5).float()
+            # data=torch.gt(data,0.5).float()
             output = model(data)
             correct += (output.squeeze(1) == target).sum().item()
     print(f'\nTest accuracy {correct / len(test_loader.dataset):.4f}')
@@ -92,7 +94,7 @@ def main():
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     use_mps = not args.no_mps and torch.backends.mps.is_available()
     torch.manual_seed(args.seed)
-    assert args.lr is None, "lr has no effect in this version. Remove the setter and use thresh instead"
+    # assert args.lr is None, "lr has no effect in this version. Remove the setter and use thresh instead"
 
     if use_cuda:
         device = torch.device("cuda")
@@ -129,47 +131,47 @@ def main():
     optimizer = optim.Adam([x for name,x in model.named_parameters() if 'bool_' not in name], lr=args.lr) if len(fp_params) > 0 else None
     
     # Select the boolean optimizer based on command-line arguments
-    bool_params = [x for name,x in model.named_parameters() if 'bool_' in name]
+    # bool_params = [x for name,x in model.named_parameters() if 'bool_' in name]
     
     # Create the optimizer with the selected configuration
-    if args.use_probabilistic:
-        if args.use_momentum:
-            print(f"Using probabilistic momentum optimizer with flip ratio={args.flip_ratio:.6f}, "
-                  f"momentum={args.momentum}, dampening={args.dampening}")
-            optimizer_bool = create_probabilistic_momentum_optimizer(
-                bool_params,
-                lr=args.lr,
-                momentum=args.momentum,
-                dampening=args.dampening,
-                flip_ratio=args.flip_ratio
-            )
-        else:
-            print(f"Using probabilistic optimizer with flip ratio={args.flip_ratio:.6f}")
-            optimizer_bool = create_probabilistic_optimizer(
-                bool_params,
-                lr=args.lr,
-                flip_ratio=args.flip_ratio
-            )
-    elif args.use_momentum:
-        print(f"Using momentum optimizer with threshold={args.thresh}, "
-              f"momentum={args.momentum}, dampening={args.dampening}")
-        optimizer_bool = create_momentum_optimizer(
-            bool_params,
-            lr=args.lr,
-            thresh=args.thresh,
-            momentum=args.momentum,
-            dampening=args.dampening
-        )
-    else:
-        print(f"Using vanilla optimizer with threshold={args.thresh}")
-        optimizer_bool = create_vanilla_optimizer(
-            bool_params,
-            lr=args.lr,
-            thresh=args.thresh
-        )
+    # if args.use_probabilistic:
+    #     if args.use_momentum:
+    #         print(f"Using probabilistic momentum optimizer with flip ratio={args.flip_ratio:.6f}, "
+    #               f"momentum={args.momentum}, dampening={args.dampening}")
+    #         optimizer_bool = create_probabilistic_momentum_optimizer(
+    #             bool_params,
+    #             lr=args.lr,
+    #             momentum=args.momentum,
+    #             dampening=args.dampening,
+    #             flip_ratio=args.flip_ratio
+    #         )
+    #     else:
+    #         print(f"Using probabilistic optimizer with flip ratio={args.flip_ratio:.6f}")
+    #         optimizer_bool = create_probabilistic_optimizer(
+    #             bool_params,
+    #             lr=args.lr,
+    #             flip_ratio=args.flip_ratio
+    #         )
+    # elif args.use_momentum:
+    #     print(f"Using momentum optimizer with threshold={args.thresh}, "
+    #           f"momentum={args.momentum}, dampening={args.dampening}")
+    #     optimizer_bool = create_momentum_optimizer(
+    #         bool_params,
+    #         lr=args.lr,
+    #         thresh=args.thresh,
+    #         momentum=args.momentum,
+    #         dampening=args.dampening
+    #     )
+    # else:
+    #     print(f"Using vanilla optimizer with threshold={args.thresh}")
+    #     optimizer_bool = create_vanilla_optimizer(
+    #         bool_params,
+    #         lr=args.lr,
+    #         thresh=args.thresh
+    #     )
 
     for epoch in range(1, args.epochs + 1):
-        train(args, model, device, train_loader, optimizer, optimizer_bool, epoch)
+        train(args, model, device, train_loader, optimizer, None, epoch)
         test(model, device, test_loader)
 
     if args.save_model:

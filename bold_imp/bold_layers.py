@@ -417,19 +417,3 @@ class BoolActv(nn.Module):
     def forward(self, X) :
         return ActvFunction.apply(X)
 
-
-################### MARK: Test ###################
-
-def test_mixtype_xor_linear():
-    layer = MixtypeXORLinear(10, 5)
-    x = torch.randint(0, 2, (32, 10)).float()
-    print("x.shape: ", x.shape)
-    print("output shape: ", layer(x).shape)
-    output = layer(x)
-    output = output.sum()
-    output.backward()
-    print("param grads: ", layer.weight.grad)
-
-if __name__ == "__main__":
-    test_ANDLinear()
-

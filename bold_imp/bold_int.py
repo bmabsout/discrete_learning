@@ -6,6 +6,14 @@ import config
 from torchvision import datasets, transforms
 from typing import Any , List , Optional , Callable
 from utils import *
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+import numpy as np
+import matplotlib
+import platform
+import os
+
+
 
 # Set print options to show full tensor contents
 torch.set_printoptions(profile="full")
@@ -248,11 +256,72 @@ def is_loss_gradient_boolean(args):
     else:
         raise ValueError("Choose a loss function from --loss-X")
 
+class AccuracyVisualizer:
+    def __init__(self, max_points=100):
+        self.max_points = max_points
+        self.accuracies = []
+        self.batch_indices = []
+        self.current_epoch = 1
+        
+        # Set up the plot
+        plt.ion()  # Turn on interactive mode
+        self.fig, self.ax = plt.subplots(figsize=(10, 6))
+        self.line, = self.ax.plot([], [], 'b-', label='Batch Accuracy')
+        
+        # Configure the plot
+        self.ax.set_xlabel('Batch')
+        self.ax.set_ylabel('Accuracy')
+        self.ax.set_title(f'Training Accuracy (Epoch {self.current_epoch})')
+        self.ax.set_ylim(0, 1.0)
+        self.ax.grid(True)
+        self.ax.legend()
+        
+        plt.tight_layout()
+        plt.show(block=False)
+    
+    def update(self, batch_idx, accuracy, epoch=None):
+        if epoch is not None and epoch != self.current_epoch:
+            # Reset for new epoch
+            self.current_epoch = epoch
+            self.accuracies = []
+            self.batch_indices = []
+            self.ax.set_title(f'Training Accuracy (Epoch {self.current_epoch})')
+        
+        # Add new data point
+        self.accuracies.append(accuracy)
+        self.batch_indices.append(batch_idx)
+        
+        # Limit number of displayed points
+        if len(self.accuracies) > self.max_points:
+            self.accuracies = self.accuracies[-self.max_points:]
+            self.batch_indices = self.batch_indices[-self.max_points:]
+        
+        # Update data in the plot
+        self.line.set_data(self.batch_indices, self.accuracies)
+        
+        # Adjust x-axis limits to show all data
+        if self.batch_indices:
+            self.ax.set_xlim(min(self.batch_indices), max(self.batch_indices) + 1)
+        
+        # Redraw the figure
+        self.fig.canvas.draw_idle()
+        self.fig.canvas.flush_events()
+    
+    def close(self):
+        plt.close(self.fig)
+
+# Modified train function with real-time visualization
 def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
     model.train()
     total_flips = 0
     criterion = get_criterion(args)
     accs = []
+    
+    # Initialize visualizer on first epoch
+    if epoch == 1:
+        if not hasattr(train, 'visualizer'):
+            train.visualizer = AccuracyVisualizer()
+    
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         zero_grads_for([optimizer, optimizer_bool])
@@ -265,6 +334,12 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
         num_total = len(target)
         config.hooks['cur_acc'] = (num_correct, num_total)
         
+        # Calculate accuracy for every batch
+        batch_acc = num_correct / num_total
+        
+        # Update the visualization with every batch
+        train.visualizer.update(batch_idx, batch_acc, epoch)
+        
         if optimizer is not None:
             optimizer.step()
         if optimizer_bool is not None:
@@ -276,7 +351,6 @@ def train(args, model, device, train_loader, optimizer, optimizer_bool, epoch):
             batch_flips = 0
         
         if batch_idx % args.log_interval == 0:
-            pred = torch.argmax(output, dim=1)
             train_acc = 100. * pred.eq(target).sum().item() / len(target)
             accs.append(train_acc / 100.)
             print()
@@ -378,6 +452,28 @@ def main():
     args = get_args()
     print_important_args(args)
     config.args = args
+
+
+    # Try to set an appropriate backend based on platform
+    try:
+        if platform.system() == 'Darwin':  # macOS
+            matplotlib.use('macosx')
+        elif platform.system() == 'Linux':
+            # Try TkAgg first on Linux if in a desktop environment
+            # Fall back to Agg for headless servers
+            if 'DISPLAY' in os.environ:
+                matplotlib.use('TkAgg')
+            else:
+                matplotlib.use('Agg')
+        else:
+            matplotlib.use('TkAgg')  # Try TkAgg on other systems
+    except ImportError:
+        # If the preferred backend isn't available, try a more universal one
+        try:
+            matplotlib.use('WebAgg')  # Browser-based display
+        except ImportError:
+            matplotlib.use('Agg')  # Fallback to non-interactive
+            print("Warning: Using non-interactive Agg backend. Plots will be saved to files only.")
 
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     use_mps = not args.no_mps and torch.backends.mps.is_available()

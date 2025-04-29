@@ -10,4 +10,4 @@
 --activation-range -1 1
 --prob-flip-ratio-decay-epochs 5 
 --prob-flip-ratio-batch-acc-aware 0.3 
---batch-size 256 
+--batch-size 64 
