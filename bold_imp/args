@@ -1,13 +1,13 @@
---dataset mnist 
+--dataset cifar10
 --arch-custom 
 --opt-momentum 
 --opt-probabilistic 
 --input-int 
 --loss-int-l1 
---spread 5000
+--spread-std
 --epochs 100 
---loss-int-l1-scale -10.0 10.0
---activation-range -1 1
+--loss-int-l1-scale -50.0 50.0
+--activation-range -50 50
 --prob-flip-ratio-decay-epochs 5 
 --prob-flip-ratio-batch-acc-aware 0.3 
---batch-size 128
+--batch-size 384
