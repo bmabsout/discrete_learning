@@ -73,17 +73,16 @@ def get_threshold_decider(thresh: int) -> FlipDecider:
     threshold_flip_decider.thresh = thresh  # type: ignore
     return threshold_flip_decider
 
-ts = 0
 
 def get_probabilistic_decider(flip_ratio: float = 0.001) -> FlipDecider:
     def probabilistic_flip_decider(weights: Tensor, accumulated_grad: Tensor) -> Tensor:
         print("w.shape ", weights.shape)
-        if ts == 0:
+        if config.ts == 0:
             print("ts:", 0)
-            ts = time.time()
+            config.ts = time.time()
         else:
-            print("ts:", time.time() - ts)
-            ts = time.time()
+            print("ts:", time.time() - config.ts)
+            config.ts = time.time()
 
 
         num_correct, num_total = config.hooks['cur_acc']
