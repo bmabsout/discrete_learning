@@ -18,8 +18,7 @@ class IntL1LossF(autograd.Function):
     @staticmethod
     def forward(ctx, X, target, activation_range):
         eff_target = -torch.ones_like(X) * activation_range[1]
-        # eff_target[torch.arange(X.size(0)), target] = activation_range[1] * X.size(1)
-        eff_target[torch.arange(X.size(0)), target] = activation_range[1] * 50
+        eff_target[torch.arange(X.size(0)), target] = activation_range[1] * config.args.loss_int_l1_salient
         loss = torch.mean(torch.abs(X - eff_target))
 
         ctx.save_for_backward(X, target, eff_target)

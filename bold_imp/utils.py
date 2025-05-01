@@ -115,6 +115,8 @@ def get_args():
                             help='Use int L1 loss. This one requires the last layer to be activation with range.')
     parser.add_argument('--loss-int-l1-scale', nargs=2, type=float, default=(-1.0, 1.0),
                         help='Scale range for int L1 loss as two floats (default: -1.0 1.0)')
+    parser.add_argument('--loss-int-l1-salient', type=int, default=50,
+                        help='Salient factor for int L1 loss (default: 50)')
     return parser.parse_args()
 
 def filter_dataset_by_labels(dataset, wanted_labels, debug=False):
@@ -234,6 +236,8 @@ def print_important_args(args):
     print("Loss function:")
     if args.loss_int_l1:
         print(f"  - Int L1 loss")
+        print(f"    - Salient factor: {args.loss_int_l1_salient}")
+        print(f"    - Scale range: {args.loss_int_l1_scale}")
     elif args.loss_int_scaling:
         print(f"  - Integer scaling loss")
     elif args.loss_cross_entropy:
