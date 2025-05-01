@@ -31,15 +31,19 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         ctx.output_range = output_range
         ctx.id = id 
 
-        # std = torch.std(X)
-        # ctx.std = X
+        # if config.args.float16:
+        #     S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
+        # else:
+        #     # S = 2 * torch.ge(X,sup // 2).float() - 1.
+        #     # S = torch.clamp(X, output_range[0], output_range[1])
+        #     S = X.clamp(output_range[0], output_range[1])
 
-        if config.args.float16:
-            S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
-        else:
-            # S = 2 * torch.ge(X,sup // 2).float() - 1.
-            # S = torch.clamp(X, output_range[0], output_range[1])
-            S = X.clamp(output_range[0], output_range[1])
+
+        ## HACK
+        # Set X to 1 where it's a multiple of 4
+        S = X.clone()
+        S[X % 4 == 0] = 1
+        S[X % 4 != 0] = -1
         return S
 
     @staticmethod
@@ -48,10 +52,7 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         sup = ctx.sup
         spread = ctx.spread
 
-        # print(torch.std(X))
-
         dist = torch.abs(X - sup // 2)
-        # Create a mask where distance is less than spread
         if config.args.float16:
             G_X = torch.zeros_like(dist).to(torch.float16)
             G_X[dist < spread] = 1
@@ -59,15 +60,20 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
             G_X = torch.zeros_like(dist)
             G_X[dist < spread] = 1
 
-        # Calculate number of zero gradients
-        # num_zeros = torch.sum(G_X == 0).item()
-        # Calculate total number of gradients
-        # total_gradients = G_X.numel()
-        # Calculate percentage of zero gradients
-        # zero_grad_percentage = num_zeros / total_gradients
-        # config.hooks[f'0_grad_{ctx.id}'] = (num_zeros, total_gradients, zero_grad_percentage)
 
         G_X = Z * G_X        
+
+
+        # HACK
+        G_X = X % 4
+
+
+
+
+
+
+
+
         return G_X, None, None, None, None
         
 class BoolActvWithThreshDiscrete(nn.Module):
