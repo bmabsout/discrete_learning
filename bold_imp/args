@@ -7,7 +7,9 @@
 --spread-std
 --epochs 100 
 --loss-int-l1-scale -50.0 50.0
+--loss-int-l1-salient 50
 --activation-range -1 1
+--prob-flip-ratio-decay 0.9
 --prob-flip-ratio-decay-epochs 5 
 --prob-flip-ratio-batch-acc-aware 0.3 
 --batch-size 384
