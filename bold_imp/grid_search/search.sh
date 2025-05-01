@@ -52,7 +52,7 @@ for l1_scale in "${l1_scales[@]}"; do
                             --prob-flip-ratio-decay-epochs $flip_epoch \
                             --prob-flip-ratio-batch-acc-aware $flip_baa \
                             --batch-size $batch_size \
-                            --arch test
+                            --arch `cat ./archs/test | tr -d '\n'`
 
                             echo "(ID=$id) Finished!"
                             id=$((id+1))
