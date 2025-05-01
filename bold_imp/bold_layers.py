@@ -31,19 +31,8 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         ctx.output_range = output_range
         ctx.id = id 
 
-        # if config.args.float16:
-        #     S = 2 * torch.ge(X,sup // 2).to(torch.float16) - 1.
-        # else:
-        #     # S = 2 * torch.ge(X,sup // 2).float() - 1.
-        #     # S = torch.clamp(X, output_range[0], output_range[1])
-        #     S = X.clamp(output_range[0], output_range[1])
+        S = X.clamp(output_range[0], output_range[1])
 
-
-        ## HACK
-        # Set X to 1 where it's a multiple of 4
-        S = X.clone()
-        S[X % 4 == 0] = 1
-        S[X % 4 != 0] = -1
         return S
 
     @staticmethod
@@ -53,26 +42,10 @@ class ActvFunctionWithThreshDiscrete(autograd.Function):
         spread = ctx.spread
 
         dist = torch.abs(X - sup // 2)
-        if config.args.float16:
-            G_X = torch.zeros_like(dist).to(torch.float16)
-            G_X[dist < spread] = 1
-        else:
-            G_X = torch.zeros_like(dist)
-            G_X[dist < spread] = 1
 
-
+        G_X = torch.zeros_like(dist)
+        G_X[dist < spread] = 1
         G_X = Z * G_X        
-
-
-        # HACK
-        G_X = X % 4
-
-
-
-
-
-
-
 
         return G_X, None, None, None, None
         
