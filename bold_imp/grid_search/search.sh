@@ -52,9 +52,9 @@ for l1_scale in "${l1_scales[@]}"; do
                             --prob-flip-ratio-decay-epochs $flip_epoch \
                             --prob-flip-ratio-batch-acc-aware $flip_baa \
                             --batch-size $batch_size \
-                            --arch `cat ./archs/test | tr -d '\n'`
+                            --arch `cat ./archs/test | tr -d '\n'` > result_${id}.txt
 
-                            echo "(ID=$id) Finished!"
+                            echo "(ID=$id) Finished! Result saved to result_${id}.txt"
                             id=$((id+1))
                         done
                     done               
