@@ -17,8 +17,8 @@ def get_spread(X):
     elif config.args.spread_std:
         return (X.mean() - X).abs().mean()
     elif config.args.spread_fix_ratio is not None:
-        # return config.args.fix_ratio_spread * (X.mean() - X).abs().mean()
-        assert False, "not implemented"
+        #assert False, "not implemented"
+        return (X.max() - X.min()) * config.args.spread_fix_ratio
     else:
         assert False, "cannot resolve spread parameter"
 
