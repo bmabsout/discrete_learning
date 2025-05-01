@@ -4,10 +4,10 @@
 --opt-probabilistic 
 --input-int 
 --loss-int-l1 
---spread-std
+--spread 5000
 --epochs 100 
---loss-int-l1-scale -50.0 50.0
+--loss-int-l1-scale -10.0 10.0
 --activation-range -1 1
 --prob-flip-ratio-decay-epochs 5 
 --prob-flip-ratio-batch-acc-aware 0.3 
---batch-size 64 
+--batch-size 128
