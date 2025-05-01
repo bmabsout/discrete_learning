@@ -1,4 +1,11 @@
-#!/bin/bash
+#!/bin/bash -l
+
+#$ -P myproject       # Specify the SCC project name you want to use
+#$ -l h_rt=12:00:00   # Specify the hard time limit for the job
+#$ -N myjob           # Give job a name
+#$ -j y
+#$ -l gpus=1
+#$ -l gpu_type A100-80G
 
 source /usr3/graduate/wfchen/ml2/venv/bin/activate
 
